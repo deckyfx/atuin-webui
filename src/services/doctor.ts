@@ -88,8 +88,8 @@ export class Doctor {
     let appDbOk = true;
     let appDbDetail = envConfig.APP_DB_PATH;
     try {
-      const { appDb } = await import("../db/app");
-      void appDb;
+      const { getAppDb } = await import("../db/app");
+      getAppDb();
     } catch (err) {
       appDbOk = false;
       appDbDetail = err instanceof Error ? err.message : String(err);

@@ -55,11 +55,16 @@ export const pruneAudit = sqliteTable(
      * audit page claims a destructive operation failed when it in fact
      * succeeded.
      */
-    status: text("status").notNull().default("pending"),
+    status: text("status", { enum: ["pending", "succeeded", "failed"] })
+      .notNull()
+      .default("pending"),
     output: text("output"),
     createdAt: text("created_at")
       .notNull()
-      .default(sql`(datetime('now','localtime'))`),
+      // UTC, not localtime: rows written either side of a DST change or on a
+      // machine in another zone otherwise sort and compare incoherently.
+      // Rendered in local time at the UI boundary instead.
+      .default(sql`(datetime('now'))`),
   },
   (table) => [index("idx_prune_audit_created").on(table.createdAt)]
 );

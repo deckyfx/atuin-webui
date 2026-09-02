@@ -6,11 +6,10 @@ import type { User } from "../db/schema";
 /**
  * A user as the dashboard exposes it.
  *
- * Built by omission from {@link User} rather than extension: the row carries a
- * password hash, and deriving the public shape from the table means a column
- * added upstream is served by default. Naming the safe fields means it is not.
+ * {@link User} already excludes the password hash, so extending it cannot
+ * reintroduce the hash by accident.
  */
-export interface UserWithStats extends Omit<User, "password"> {
+export interface UserWithStats extends User {
   sessionCount: number;
   storeRecords: number;
 }

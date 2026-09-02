@@ -42,16 +42,18 @@ export function ActivityChart({ data, height = 160 }: Props) {
   // magnitude is readable without hovering. An unlabelled gridline is chart
   // junk: it implies a scale it never states.
   const PLOT = 0.86;
+  // Keyed by position, not value: with max = 1 both ticks round to the same
+  // number and React sees duplicate keys.
   const ticks = [
-    { value: max, top: (1 - PLOT) * height },
-    { value: Math.round(max / 2), top: (1 - PLOT / 2) * height },
+    { id: "top", value: max, top: (1 - PLOT) * height },
+    { id: "mid", value: Math.round(max / 2), top: (1 - PLOT / 2) * height },
   ];
 
   return (
     <div className="relative pl-10">
       {ticks.map((t) => (
         <span
-          key={t.value}
+          key={t.id}
           className="absolute left-0 -translate-y-1/2 text-[10px] tabular-nums text-ink-subtle"
           style={{ top: t.top }}
         >

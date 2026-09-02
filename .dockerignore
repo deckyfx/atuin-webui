@@ -4,5 +4,7 @@ binaries
 sandbox
 .git
 .env
+.env.*
+!.env.example
 *.log
 .vscode

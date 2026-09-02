@@ -118,8 +118,14 @@ export async function installAtuin(
   const asset = `atuin-${target.triple}.tar.gz`;
   const base = `https://github.com/atuinsh/atuin/releases/download/v${version}/${asset}`;
 
+  // Bounded: without a timeout a stalled connection hangs the request handler
+  // indefinitely, and this runs from an HTTP endpoint.
+  const DOWNLOAD_TIMEOUT_MS = 120_000;
+
   onProgress({ step: "fetching checksum", detail: `${asset}.sha256` });
-  const sumRes = await fetch(`${base}.sha256`);
+  const sumRes = await fetch(`${base}.sha256`, {
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  });
   if (!sumRes.ok) {
     throw new Error(`Could not fetch checksum for atuin v${version} (${sumRes.status}).`);
   }
@@ -130,7 +136,7 @@ export async function installAtuin(
   }
 
   onProgress({ step: "downloading", detail: asset });
-  const binRes = await fetch(base);
+  const binRes = await fetch(base, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   if (!binRes.ok) {
     throw new Error(`Download failed for atuin v${version} (${binRes.status}).`);
   }

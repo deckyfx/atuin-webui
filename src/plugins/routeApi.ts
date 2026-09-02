@@ -176,7 +176,7 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       const auditId = await AuditStore.begin({
         action: "delete-exact",
         profile: envConfig.PROFILE,
-        rule: JSON.stringify({ mode: "exact" }),
+        rule: { mode: "exact" },
         matchedCount: matched,
         sample: [body.command],
       });
@@ -199,6 +199,34 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
     { body: t.Object({ command: t.String({ minLength: 1 }) }) }
   )
   .post(
+    "/history/preview-batch",
+    async ({ body, set }) => {
+      try {
+        // Sequential: concurrent `atuin` processes contend on one sqlite file.
+        let total = 0;
+        const perCommand: Array<{ command: string; total: number; overmatches: number }> = [];
+        for (const command of body.commands) {
+          const p = await AtuinCli.previewExact(command);
+          total += p.total;
+          perCommand.push({
+            command,
+            total: p.total,
+            overmatches: p.overmatches.length,
+          });
+        }
+        return { total, commands: body.commands.length, perCommand };
+      } catch (err) {
+        set.status = 503;
+        return { message: err instanceof Error ? err.message : "Preview failed." };
+      }
+    },
+    {
+      body: t.Object({
+        commands: t.Array(t.String({ minLength: 1 }), { minItems: 1, maxItems: 500 }),
+      }),
+    }
+  )
+  .post(
     "/history/delete-batch",
     async ({ body }) => {
       // Sequential rather than parallel: each delete appends to the record
@@ -206,7 +234,7 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       const auditId = await AuditStore.begin({
         action: "delete-batch",
         profile: envConfig.PROFILE,
-        rule: JSON.stringify({ mode: "exact", requested: body.commands.length }),
+        rule: { mode: "exact", requested: body.commands.length },
         sample: body.commands,
       });
 
@@ -317,7 +345,7 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       const auditId = await AuditStore.begin({
         action: "delete",
         profile: envConfig.PROFILE,
-        rule: JSON.stringify(rule),
+        rule,
         matchedCount: matched.total,
         sample: matched.sample,
       });
@@ -368,7 +396,7 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       const auditId = await AuditStore.begin({
         action: "purge-verbs",
         profile: envConfig.PROFILE,
-        rule: JSON.stringify({ verbs: body.verbs, mode: "verb-prefix" }),
+        rule: { verbs: body.verbs, mode: "verb-prefix" },
       });
 
       const results: Array<{ verb: string; ok: boolean; removed: number; message?: string }> = [];

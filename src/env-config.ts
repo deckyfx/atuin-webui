@@ -109,7 +109,23 @@ class EnvConfig {
 
   /** Resolves the bootstrap key from file or inline, whichever is set. */
   async resolveKey(): Promise<string | undefined> {
-    if (this.KEY_FILE) return (await Bun.file(this.KEY_FILE).text()).trim();
+    if (this.KEY_FILE) {
+      try {
+        const key = (await Bun.file(this.KEY_FILE).text()).trim();
+        if (!key) {
+          throw new Error(`ATUIN_KEY_FILE ${this.KEY_FILE} is empty.`);
+        }
+        return key;
+      } catch (err) {
+        // Named explicitly: an unreadable key file otherwise surfaces as an
+        // opaque login failure far from the actual misconfiguration.
+        throw new Error(
+          `Cannot read ATUIN_KEY_FILE ${this.KEY_FILE}: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      }
+    }
     return this.KEY_INLINE?.trim();
   }
 

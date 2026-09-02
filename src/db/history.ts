@@ -6,17 +6,17 @@ import * as historySchema from "./history-schema";
 
 /** Thrown when the atuin client's data is not present on this machine. */
 export class HistoryUnavailableError extends Error {
-  constructor(readonly path: string) {
+  constructor(readonly path: string, options?: { cause?: unknown }) {
     super(
       `No atuin history database at ${path}. ` +
-        `Install atuin and run \`atuin login\`, or set ATUIN_PROFILE/ATUIN_CLIENT_DATA_DIR.`
+        `Install atuin and run \`atuin login\`, or set ATUIN_PROFILE/ATUIN_CLIENT_DATA_DIR.`,
+      options
     );
     this.name = "HistoryUnavailableError";
   }
 }
 
 let cached: BunSQLiteDatabase<typeof historySchema> | null = null;
-let checked = false;
 
 /**
  * Read-only handle on the atuin client's history database.
@@ -35,21 +35,19 @@ export function getHistoryDb(): BunSQLiteDatabase<typeof historySchema> {
     // Wait rather than fail if the daemon is mid-write.
     sqlite.run("PRAGMA busy_timeout=5000;");
     cached = drizzle(sqlite, { schema: historySchema });
-    checked = true;
     return cached;
-  } catch {
-    checked = true;
-    throw new HistoryUnavailableError(envConfig.HISTORY_DB_PATH);
+  } catch (err) {
+    // The original error names the actual problem — missing file, bad
+    // permissions, corrupt database — which the path alone does not.
+    throw new HistoryUnavailableError(envConfig.HISTORY_DB_PATH, { cause: err });
   }
 }
 
 /** True when the history database can be opened. Never throws. */
 export function historyAvailable(): boolean {
   if (cached) return true;
-  if (checked && !cached) {
-    // Re-check: atuin may have been set up since the last attempt.
-    checked = false;
-  }
+  // Always re-attempts: atuin may have been set up since the last call, and a
+  // cached "no" would keep the dashboard reporting a fixed problem forever.
   try {
     getHistoryDb();
     return true;

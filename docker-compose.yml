@@ -53,7 +53,10 @@ services:
     volumes:
       - ./data/server:/config
     ports:
-      - "8888:8888"
+      # Loopback, like the dashboard: "8888:8888" binds every interface, and
+      # the sync server accepts registrations and bearer tokens over plain
+      # HTTP. Front it with TLS before publishing it beyond this host.
+      - "127.0.0.1:8888:8888"
     environment:
       ATUIN_HOST: "0.0.0.0"
       ATUIN_PORT: "8888"

@@ -3,10 +3,6 @@
     {
       "name": "atuin-dashboard",
       "path": "."
-    },
-    {
-      "name": "atuin (upstream reference)",
-      "path": "../atuin-upstream"
     }
   ],
   "settings": {
@@ -18,10 +14,7 @@
     },
     "search.exclude": {
       "**/atuin-upstream/target/**": true
-    },
-    "rust-analyzer.linkedProjects": [
-      "../atuin-upstream/Cargo.toml"
-    ]
+    }
   },
   "extensions": {
     "recommendations": [

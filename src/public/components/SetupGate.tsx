@@ -35,8 +35,7 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
 
   const refresh = () => {
     const seq = ++requestSeq.current;
-    return
-    fetch("/api/setup/status")
+    return fetch("/api/setup/status")
       .then((r) => {
         if (!r.ok) throw new Error(`Request failed (${r.status})`);
         return r.json();

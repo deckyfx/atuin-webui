@@ -48,6 +48,16 @@ export const storeIdxCache = sqliteTable("store_idx_cache", {
   idx: integer("idx"),
 });
 
-export type User = typeof users.$inferSelect;
+/**
+ * A user row *without* its password hash.
+ *
+ * The column stays in the table definition because the atuin server owns the
+ * schema, but it is kept out of the exported type: a hash that is not in the
+ * type cannot be selected into a response by accident.
+ */
+export type User = Omit<typeof users.$inferSelect, "password">;
+
+/** The full row, including the hash. Use only where the hash is genuinely needed. */
+export type UserRow = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type StoreRecord = typeof store.$inferSelect;

@@ -42,6 +42,9 @@ export function HistoryPage() {
   // every occurrence of a selected command goes together.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirming, setConfirming] = useState(false);
+  // Selection names commands; this is how many *entries* those commands cover,
+  // which is the number that matters before an irreversible delete.
+  const [batchPreview, setBatchPreview] = useState<{ total: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const push = useToastStore((s) => s.push);
   const limit = 50;
@@ -114,6 +117,28 @@ export function HistoryPage() {
     setConfirming(false);
   }
 
+  async function previewBatch() {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/history/preview-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commands: [...selected] }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || typeof body.total !== "number") {
+        push("error", body.message ?? `Preview failed (${res.status}).`);
+        return;
+      }
+      setBatchPreview({ total: body.total });
+      setConfirming(true);
+    } catch (err) {
+      push("error", err instanceof Error ? err.message : "Preview failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function deleteSelected() {
     setBusy(true);
     try {
@@ -122,7 +147,14 @@ export function HistoryPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ commands: [...selected] }),
       });
-      const body = await res.json();
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        // A non-2xx previously fell through to the success branch and cleared
+        // the selection, so a failed deletion looked like a completed one.
+        push("error", body.message ?? `Delete failed (${res.status}).`);
+        return;
+      }
 
       if (body.refused?.length) {
         push(
@@ -136,6 +168,7 @@ export function HistoryPage() {
 
       setSelected(new Set());
       setConfirming(false);
+      setBatchPreview(null);
       setReloadKey((k) => k + 1);
     } catch (err) {
       push("error", err instanceof Error ? err.message : "Delete failed.");
@@ -200,7 +233,7 @@ export function HistoryPage() {
           <span className="flex-1" />
           {!confirming ? (
             <button
-              onClick={() => setConfirming(true)}
+              onClick={() => void previewBatch()}
               className="inline-flex items-center gap-1.5 rounded-lg border border-danger/40 bg-danger-soft px-3 py-1.5 text-xs font-medium text-danger hover:brightness-110"
             >
               <Trash2 size={13} />
@@ -210,7 +243,13 @@ export function HistoryPage() {
             <>
               <span className="inline-flex items-center gap-1.5 text-xs text-danger">
                 <AlertTriangle size={13} />
-                Propagates to every machine. Sure?
+                {batchPreview
+                  ? `${batchPreview.total.toLocaleString()} ${
+                      batchPreview.total === 1 ? "entry" : "entries"
+                    } across ${selected.size} command${
+                      selected.size === 1 ? "" : "s"
+                    }. Propagates to every machine. Sure?`
+                  : "Propagates to every machine. Sure?"}
               </span>
               <button
                 onClick={deleteSelected}
@@ -328,7 +367,8 @@ export function HistoryPage() {
                       <button
                         onClick={() => {
                           setSelected(new Set([row.command]));
-                          setConfirming(true);
+                          setConfirming(false);
+                          setBatchPreview(null);
                         }}
                         aria-label="Delete this command"
                         title="Delete every occurrence of this command"

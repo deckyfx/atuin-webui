@@ -1,5 +1,5 @@
 import { desc, eq } from "drizzle-orm";
-import { appDb } from "../db/app";
+import { getAppDb } from "../db/app";
 import { pruneAudit } from "../db/app-schema";
 import type { PruneAuditRow, NewPruneAudit } from "../db/app-schema";
 
@@ -33,8 +33,9 @@ const REDACTIONS: Array<[RegExp, string]> = [
   // Authorization: Bearer …  (often inside a quoted header argument)
   [new RegExp(String.raw`(Authorization:\s*(?:Bearer|Basic)\s+)[^"']+`, "gi"),
     "$1«redacted»"],
-  // MySQL-style attached password: -pSECRET
-  [new RegExp(String.raw`(-p)(?=\S)${VALUE}`, "g"), "$1«redacted»"],
+  // MySQL-style attached password: -pSECRET. Anchored to a token start so it
+  // cannot fire mid-word (a path like "dump-pending" is not a password).
+  [new RegExp(String.raw`(^|\s)(-p)(?=\S)${VALUE}`, "g"), "$1$2«redacted»"],
   // Long opaque blobs: JWTs, hex keys.
   [/\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, "«redacted-jwt»"],
   [/\b[0-9a-f]{40,}\b/gi, "«redacted-hex»"],
@@ -45,10 +46,23 @@ export function redactCommand(command: string): string {
   return REDACTIONS.reduce((acc, [re, to]) => acc.replace(re, to), command);
 }
 
+/** Recursively redacts every string in a JSON-serialisable value. */
+function redactValues(value: unknown): unknown {
+  if (typeof value === "string") return redactCommand(value);
+  if (Array.isArray(value)) return value.map(redactValues);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, redactValues(v)])
+    );
+  }
+  return value;
+}
+
 export interface AuditIntent {
   action: string;
   profile: string;
-  rule?: string;
+  /** A JSON-serialisable description of the rule; strings are redacted. */
+  rule?: unknown;
   matchedCount?: number;
   /** Raw commands; redacted here before they reach the database. */
   sample?: string[];
@@ -75,7 +89,10 @@ export class AuditStore {
       profile: intent.profile,
       // The rule carries the user's search query, which is itself a fragment
       // of a command and can contain the secret they were trying to purge.
-      rule: intent.rule ? redactCommand(intent.rule) : null,
+      // Redacted per value before serialisation. Running the patterns over
+      // finished JSON lets a quote or escape inside a value break the match,
+      // and a partly-redacted secret is still a leaked secret.
+      rule: intent.rule ? JSON.stringify(redactValues(intent.rule)) : null,
       matchedCount: intent.matchedCount ?? 0,
       sample: intent.sample ? JSON.stringify(intent.sample.map(redactCommand)) : null,
       status: "pending",
@@ -83,7 +100,7 @@ export class AuditStore {
       succeeded: false,
       output: null,
     };
-    const [inserted] = await appDb.insert(pruneAudit).values(row).returning({
+    const [inserted] = await getAppDb().insert(pruneAudit).values(row).returning({
       id: pruneAudit.id,
     });
     if (!inserted) throw new Error("Audit log write returned no row.");
@@ -96,7 +113,7 @@ export class AuditStore {
     result: { succeeded: boolean; output?: string; matchedCount?: number }
   ): Promise<void> {
     try {
-      await appDb
+      await getAppDb()
         .update(pruneAudit)
         .set({
           status: result.succeeded ? "succeeded" : "failed",
@@ -115,6 +132,6 @@ export class AuditStore {
   }
 
   static async recent(limit = 100): Promise<PruneAuditRow[]> {
-    return appDb.select().from(pruneAudit).orderBy(desc(pruneAudit.id)).limit(limit);
+    return getAppDb().select().from(pruneAudit).orderBy(desc(pruneAudit.id)).limit(limit);
   }
 }

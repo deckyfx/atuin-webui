@@ -13,6 +13,14 @@ set -euo pipefail
 PROFILE="${1:?usage: $0 <profile> <atuin args...>}"
 shift
 
+# The profile is interpolated into a path, so restrict it to a single harmless
+# path segment: "../../foo" would otherwise point the client's data directory
+# anywhere on the filesystem — including the real one.
+if ! printf '%s' "$PROFILE" | grep -Eq '^[A-Za-z0-9._-]+$' || [ "$PROFILE" = "." ] || [ "$PROFILE" = ".." ]; then
+  echo "Invalid profile name: $PROFILE (letters, digits, dot, dash, underscore)" >&2
+  exit 1
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROFILE_DIR="$ROOT/clients/$PROFILE"
 mkdir -p "$PROFILE_DIR/config/atuin" "$PROFILE_DIR/data"

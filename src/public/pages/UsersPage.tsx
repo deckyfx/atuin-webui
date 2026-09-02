@@ -16,13 +16,21 @@ export function UsersPage() {
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
 
   async function load() {
-    const res = await fetch("/api/users");
-    if (!res.ok) {
-      setError("Failed to load users");
-    } else {
+    // try/finally: a rejected fetch previously skipped setLoading(false) and
+    // left the page spinning, with an unhandled rejection.
+    try {
+      const res = await fetch("/api/users");
+      if (!res.ok) {
+        setError("Failed to load users");
+        return;
+      }
       setUsers(await res.json());
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load users");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
@@ -34,13 +42,20 @@ export function UsersPage() {
     }
     setDeleting(userId);
     setConfirmDelete(null);
-    const r = await fetch(`/api/users/${userId}`, { method: "DELETE" });
-    if (r.ok) {
-      setUsers((prev) => prev.filter((u) => u.id !== userId));
-    } else {
-      setError("Failed to delete user");
+    try {
+      const r = await fetch(`/api/users/${userId}`, { method: "DELETE" });
+      if (r.ok) {
+        setUsers((prev) => prev.filter((u) => u.id !== userId));
+      } else {
+        setError("Failed to delete user");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete user");
+    } finally {
+      // In finally: a rejected DELETE previously left the row disabled until
+      // a page reload.
+      setDeleting(null);
     }
-    setDeleting(null);
   }
 
   if (loading) return <div className="text-ink-subtle text-sm p-8">Loading…</div>;

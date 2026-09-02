@@ -80,3 +80,8 @@ test("redacts a value with backslash-escaped whitespace", () => {
   expect(out).not.toContain("horse");
   expect(out).not.toContain("battery");
 });
+
+test("does not fire on -p inside a word", () => {
+  const cmd = "./scripts/dump-pending.sh";
+  expect(redactCommand(cmd)).toBe(cmd);
+});

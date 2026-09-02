@@ -39,7 +39,12 @@ export function TopRibbon() {
     setSyncing(true);
     try {
       const res = await fetch("/api/sync", { method: "POST" });
-      const body = await res.json();
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // The server's message names the actual failure; "Sync finished" did not.
+        push("error", body.message || body.output || `Sync failed (${res.status}).`);
+        return;
+      }
       push(body.success ? "success" : "error", body.output || "Sync finished.");
     } catch (err) {
       push("error", err instanceof Error ? err.message : "Sync failed.");
@@ -49,22 +54,27 @@ export function TopRibbon() {
   }
 
   const live = status?.profile === "live";
+  // Until the status arrives the profile is unknown, and "safe to experiment"
+  // is the one claim that must not be made on a guess.
+  const known = status !== null;
 
   return (
     <header className="sticky top-0 z-30 flex items-center gap-4 h-12 px-5 border-b border-line bg-overlay/85 backdrop-blur-md">
       <div
         className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${
-          live
+          live && known
             ? "border-warn/40 bg-warn-soft text-warn"
             : "border-line bg-raised text-ink-muted"
         }`}
         title={
-          live
-            ? "Deletions reach every synced machine"
-            : "Disposable sandbox client — safe to experiment"
+          !known
+            ? "Checking which client profile is active…"
+            : live
+              ? "Deletions reach every synced machine"
+              : "Disposable sandbox client — safe to experiment"
         }
       >
-        {live ? <ShieldAlert size={13} /> : <Database size={13} />}
+        {known && live ? <ShieldAlert size={13} /> : <Database size={13} />}
         {status ? status.profile : "…"}
       </div>
 

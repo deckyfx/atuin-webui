@@ -32,6 +32,9 @@ const targets: BinaryTarget[] = [
   { target: "bun-linux-arm64", outfile: "./binaries/atuin-dashboard-linux-arm64" },
   { target: "bun-darwin-x64", outfile: "./binaries/atuin-dashboard-macos-x64" },
   { target: "bun-darwin-arm64", outfile: "./binaries/atuin-dashboard-macos-arm64" },
+  // Listed because hostTarget() can resolve to it; without an entry here
+  // `--current` on Windows finds no target and exits.
+  { target: "bun-windows-x64", outfile: "./binaries/atuin-dashboard-windows-x64.exe" },
 ];
 
 /** Only genuinely static values belong here. Paths and credentials vary per
