@@ -3,7 +3,14 @@ import { getServerDb } from "../db";
 import { users, sessions, store } from "../db/schema";
 import type { User } from "../db/schema";
 
-export interface UserWithStats extends User {
+/**
+ * A user as the dashboard exposes it.
+ *
+ * Built by omission from {@link User} rather than extension: the row carries a
+ * password hash, and deriving the public shape from the table means a column
+ * added upstream is served by default. Naming the safe fields means it is not.
+ */
+export interface UserWithStats extends Omit<User, "password"> {
   sessionCount: number;
   storeRecords: number;
 }
@@ -16,7 +23,9 @@ export class UserStore {
         id: users.id,
         username: users.username,
         email: users.email,
-        password: users.password,
+        // The password hash is deliberately not selected: this feeds
+        // GET /api/users, and serving every user's hash to any caller that can
+        // reach the port is a credential disclosure, not a display detail.
         // Cast explicitly to string so Drizzle never coerces to a Date object
         createdAt: sql<string>`CAST(${users.createdAt} AS TEXT)`,
       })

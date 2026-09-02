@@ -10,8 +10,16 @@ await Migrator.run();
 const app = new Elysia()
   .use(apiPlugin)
   .use(appPlugin)
-  .listen(envConfig.PORT);
+  .listen({ hostname: envConfig.HOST, port: envConfig.PORT });
 
-console.log(`Atuin Dashboard running at http://localhost:${envConfig.PORT}`);
+console.log(
+  `Atuin Dashboard running at http://${envConfig.HOST}:${envConfig.PORT}`
+);
+if (envConfig.HOST !== "127.0.0.1" && envConfig.HOST !== "localhost") {
+  console.warn(
+    `⚠️  Listening on ${envConfig.HOST}: every endpoint is unauthenticated and can ` +
+      `delete history on every synced machine. Put authentication in front of it.`
+  );
+}
 
 export type App = typeof app;

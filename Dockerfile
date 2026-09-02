@@ -46,7 +46,11 @@ RUN useradd --uid 1000 --create-home --shell /usr/sbin/nologin atuin \
 
 COPY --from=builder /build/binaries/atuin-dashboard-linux-* /usr/local/bin/atuin-dashboard
 
+# 0.0.0.0 inside the container, because loopback there is unreachable from the
+# host. The API is unauthenticated, so docker-compose publishes the port on the
+# host's loopback only -- exposing it beyond that needs auth in front.
 ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
     PORT=3001 \
     ATUIN_PROFILE=live \
     ATUIN_CLIENT_DATA_DIR=/data/atuin \

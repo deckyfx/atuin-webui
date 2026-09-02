@@ -20,7 +20,7 @@ export const pruneAudit = sqliteTable(
   "prune_audit",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    /** "delete" | "dedup" | "prune" | "sync" */
+    /** "delete" | "delete-exact" | "delete-batch" | "purge-verbs" | "dedup" */
     action: text("action").notNull(),
     /** The atuin profile the action ran against. */
     profile: text("profile").notNull(),

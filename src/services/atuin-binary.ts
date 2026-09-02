@@ -104,6 +104,17 @@ export async function installAtuin(
     );
   }
 
+  // The version reaches this function from an HTTP body. Interpolating it
+  // unchecked lets a caller steer the URL to any path on the host -- and the
+  // sha256 does not help, because the digest is fetched from that same
+  // attacker-chosen location. The result would be an arbitrary binary
+  // downloaded, marked executable, and then run by this process.
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+    throw new Error(
+      `Invalid atuin version ${JSON.stringify(version)}: expected a release like "18.20.1".`
+    );
+  }
+
   const asset = `atuin-${target.triple}.tar.gz`;
   const base = `https://github.com/atuinsh/atuin/releases/download/v${version}/${asset}`;
 

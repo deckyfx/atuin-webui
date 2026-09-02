@@ -171,6 +171,19 @@ class EnvConfig {
     return Bun.env.ATUIN_BIN;
   }
 
+  /**
+   * Listen address. Loopback by default.
+   *
+   * Every endpoint is unauthenticated: the API deletes history across every
+   * synced machine, accepts an account key, writes an executable to disk, and
+   * returns command text that routinely contains tokens. Binding 0.0.0.0 hands
+   * that to anyone on the network, so exposing it is an explicit choice —
+   * set HOST=0.0.0.0 and put authentication in front.
+   */
+  get HOST(): string {
+    return Bun.env.HOST ?? "127.0.0.1";
+  }
+
   get PORT(): number {
     const port = Bun.env.PORT;
     return port ? parseInt(port, 10) : 3001;
