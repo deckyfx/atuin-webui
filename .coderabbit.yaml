@@ -1,0 +1,58 @@
+# CodeRabbit configuration for the remote (pull-request) reviewer.
+# Validate with: coderabbit config validate
+language: en
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+
+  path_filters:
+    # Generated or vendored: reviewing these produces noise, not findings.
+    - "!bun.lock"
+    - "!dist/**"
+    - "!binaries/**"
+    - "!data/**"
+    - "!src/db/migrations-embedded.ts"
+
+  path_instructions:
+    - path: "src/services/atuin-cli.ts"
+      instructions: |
+        This wraps the `atuin` binary and is the only path that mutates history.
+        Flag anything that would delete more than a preview showed: the preview
+        and the delete must run identical queries, and `--include-duplicates`
+        must be present on both or the preview undercounts.
+        `atuin search` exits 1 when nothing matched; treating that as an error,
+        or treating a real failure as "0 matches", are both bugs.
+        Verb queries must keep their trailing space — a bare `ls` prefix also
+        matches `lsof`.
+
+    - path: "src/db/**"
+      instructions: |
+        These databases are owned by atuin, not by this project: `history.db`
+        must stay read-only, and only the dashboard's own database may be
+        migrated. Connections must be opened lazily — throwing at module import
+        prevents the server from booting on a host where atuin is absent, which
+        is an expected first-boot state.
+
+    - path: "src/public/**"
+      instructions: |
+        Colour must come from the semantic tokens in styles.css, never
+        hardcoded greys or `text-white`, or light mode breaks. Chart series
+        colours are validated per surface; adding one needs re-validation.
+        Any destructive action needs a preview and an explicit confirm.
+
+    - path: "Dockerfile"
+      instructions: |
+        The atuin client is fetched at runtime rather than baked in, so
+        upgrading it does not require rebuilding this image. A bind-mounted
+        binary must be the musl build; a glibc one will not start on this base.
+
+chat:
+  auto_reply: true

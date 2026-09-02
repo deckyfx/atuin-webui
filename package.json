@@ -11,7 +11,10 @@
     "db:generate": "drizzle-kit generate && bun run scripts/embed-migrations.ts",
     "db:migrate": "bun run scripts/migrate.ts",
     "studio": "drizzle-kit studio",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "review": "coderabbit review",
+    "review:agent": "coderabbit review --agent",
+    "review:pr": "coderabbit pullrequest"
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.9",
