@@ -1,0 +1,57 @@
+# Dashboard alongside a self-hosted atuin sync server.
+#
+# First boot: open the dashboard, go to Doctor, download the atuin client, then
+# log in on the setup screen. Both land in the named volumes and survive
+# restarts, so this is a one-time step.
+services:
+  atuin-dashboard:
+    build: .
+    image: atuin-dashboard:latest
+    container_name: atuin-dashboard
+    restart: unless-stopped
+    ports:
+      # Bound to loopback: the setup form accepts a password and the Prune page
+      # deletes real history. Put a reverse proxy with TLS in front to expose it.
+      - "127.0.0.1:3001:3001"
+    environment:
+      ATUIN_PROFILE: live
+      # Pin the client release. Bump and restart to upgrade -- no rebuild.
+      ATUIN_VERSION: "18.20.1"
+      # Where the client syncs to. `atuin` is the service name below.
+      ATUIN_SYNC_ADDRESS: "http://atuin:8888"
+      # Optional: enables the Users/Sessions/Activity admin pages. Read-only,
+      # and the payloads are E2E-encrypted, so it never exposes command text.
+      # ATUIN_SERVER_DB_PATH: /srv/atuin/atuin.db
+    volumes:
+      # Bind mounts, so the client's databases and the downloaded binary are
+      # inspectable from the host during development. The image runs as uid
+      # 1000; these must be owned by 1000 or the container cannot write them.
+      - ./data/client:/data
+      - ./data/config:/config
+      # Mount the server's database read-only to enable the admin pages:
+      # - ./data/server:/srv/atuin:ro
+      #
+      # Or skip the runtime download by reusing a host binary. It must be the
+      # MUSL build: atuin's installer places a glibc one, which will not start
+      # on this image's older libc.
+      # - /path/to/atuin-musl:/usr/local/bin/atuin:ro
+      #   with environment: ATUIN_BIN=/usr/local/bin/atuin
+    depends_on:
+      - atuin
+
+  # Your existing sync server. Shown for completeness -- adjust to match the
+  # stack you already run.
+  atuin:
+    image: ghcr.io/atuinsh/atuin:latest
+    container_name: atuin-server
+    restart: unless-stopped
+    command: start
+    volumes:
+      - ./data/server:/config
+    ports:
+      - "8888:8888"
+    environment:
+      ATUIN_HOST: "0.0.0.0"
+      ATUIN_PORT: "8888"
+      ATUIN_DB_URI: "sqlite:///config/atuin.db?mode=rwc"
+      ATUIN_OPEN_REGISTRATION: "false"

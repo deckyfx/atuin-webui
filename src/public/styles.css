@@ -1,0 +1,193 @@
+@import "tailwindcss";
+
+/*
+ * Self-hosted variable fonts: no CDN request, so the compiled binary works
+ * offline and on an air-gapped host.
+ *
+ * The @font-face rules are written out rather than importing the package's
+ * index.css, which pulls in all seven unicode subsets (cyrillic, greek,
+ * vietnamese...). Bun inlines each as a base64 data URI, so importing the lot
+ * cost 440KB of CSS for glyphs this UI never renders. Latin only.
+ */
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/inter/files/inter-latin-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+2000-206F,
+    U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "JetBrains Mono Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url("@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+2000-206F,
+    U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/*
+ * Semantic tokens.
+ *
+ * Components reference roles (surface, ink, border) rather than raw greys, so
+ * switching theme swaps a handful of variables instead of rewriting every
+ * utility class. Tailwind 4 emits these as custom properties, which lets each
+ * one indirect through a per-theme variable below.
+ */
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", monospace;
+
+  --color-surface: var(--c-surface);
+  --color-raised: var(--c-raised);
+  --color-overlay: var(--c-overlay);
+  --color-hover: var(--c-hover);
+
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+
+  --color-ink: var(--c-ink);
+  --color-ink-muted: var(--c-ink-muted);
+  --color-ink-subtle: var(--c-ink-subtle);
+
+  --color-brand: var(--c-brand);
+  --color-brand-soft: var(--c-brand-soft);
+  --color-danger: var(--c-danger);
+  --color-danger-soft: var(--c-danger-soft);
+  --color-warn: var(--c-warn);
+  --color-warn-soft: var(--c-warn-soft);
+}
+
+/* Light is the base definition. */
+:root {
+  color-scheme: light;
+
+  --c-surface: #ffffff;
+  --c-raised: #f8fafc;
+  --c-overlay: #ffffff;
+  --c-hover: #f1f5f9;
+
+  --c-line: #e2e8f0;
+  --c-line-strong: #cbd5e1;
+
+  --c-ink: #0f172a;
+  --c-ink-muted: #64748b;
+  --c-ink-subtle: #94a3b8;
+
+  --c-brand: #047857;
+  --c-brand-soft: #ecfdf5;
+  --c-danger: #b91c1c;
+  --c-danger-soft: #fef2f2;
+  --c-warn: #b45309;
+  --c-warn-soft: #fffbeb;
+
+  /* Chart ink, kept in step with the surface it is validated against. */
+  --c-grid: #e2e8f0;
+
+  /* Categorical series, validated all-pairs against the light raised surface
+     (#f8fafc): CVD dE 9.2, normal-vision dE 24.0. Slot 3 sits at 2.69:1, below
+     the 3:1 contrast floor -- the relief rule applies, and BarList discharges
+     it by direct-labelling every row. */
+  --c-series-1: #2a78d6;
+  --c-series-2: #eb6834;
+  --c-series-3: #1baf7a;
+}
+
+/* "Auto": no data-theme attribute, so the OS decides. The :not() guard keeps
+   an explicit light choice winning over OS dark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --c-surface: #030712;
+    --c-raised: #0b1220;
+    --c-overlay: #111827;
+    --c-hover: #1f2937;
+
+    --c-line: #1f2937;
+    --c-line-strong: #374151;
+
+    --c-ink: #f1f5f9;
+    --c-ink-muted: #94a3b8;
+    --c-ink-subtle: #64748b;
+
+    --c-brand: #34d399;
+    --c-brand-soft: #064e3b;
+    --c-danger: #f87171;
+    --c-danger-soft: #450a0a;
+    --c-warn: #fbbf24;
+    --c-warn-soft: #451a03;
+
+    --c-grid: #1f2937;
+
+    /* Same three hues re-stepped for the dark surface (#111827) and validated
+       as a set: CVD dE 9.4, normal-vision dE 20.9, all >= 3:1. */
+    --c-series-1: #3987e5;
+    --c-series-2: #d95926;
+    --c-series-3: #199e70;
+  }
+}
+
+/* Explicit dark choice wins in both directions. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --c-surface: #030712;
+  --c-raised: #0b1220;
+  --c-overlay: #111827;
+  --c-hover: #1f2937;
+
+  --c-line: #1f2937;
+  --c-line-strong: #374151;
+
+  --c-ink: #f1f5f9;
+  --c-ink-muted: #94a3b8;
+  --c-ink-subtle: #64748b;
+
+  --c-brand: #34d399;
+  --c-brand-soft: #064e3b;
+  --c-danger: #f87171;
+  --c-danger-soft: #450a0a;
+  --c-warn: #fbbf24;
+  --c-warn-soft: #451a03;
+
+  --c-grid: #1f2937;
+
+  /* Same three hues re-stepped for the dark surface (#111827) and validated
+     as a set: CVD dE 9.4, normal-vision dE 20.9, all >= 3:1. */
+  --c-series-1: #3987e5;
+  --c-series-2: #d95926;
+  --c-series-3: #199e70;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    background-color: var(--c-surface);
+    color: var(--c-ink);
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+  }
+
+  /* Tailwind 4 sets buttons to cursor: default. Restore the pointer for
+     anything actually clickable, without reintroducing it on disabled controls. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  label[for],
+  select:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"][aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+}

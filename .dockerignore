@@ -1,0 +1,8 @@
+node_modules
+dist
+binaries
+sandbox
+.git
+.env
+*.log
+.vscode

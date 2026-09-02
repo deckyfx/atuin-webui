@@ -1,0 +1,46 @@
+{
+  // Use the workspace TypeScript for consistent diagnostics with `bun run typecheck`
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "typescript.preferences.importModuleSpecifierEnding": "minimal",
+  "typescript.updateImportsOnFileMove.enabled": "always",
+  "javascript.updateImportsOnFileMove.enabled": "always",
+
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "explicit"
+  },
+  "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[json]": { "editor.defaultFormatter": "vscode.json-language-features" },
+  "[jsonc]": { "editor.defaultFormatter": "vscode.json-language-features" },
+
+  // Tailwind v4 lives in CSS, so silence unknown at-rules and enable IntelliSense in TSX
+  "css.lint.unknownAtRules": "ignore",
+  "tailwindCSS.includeLanguages": {
+    "typescriptreact": "javascript",
+    "html": "html"
+  },
+  "tailwindCSS.experimental.classRegex": [
+    ["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"]
+  ],
+
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/out": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/bun.lock": true,
+    "**/dist": true,
+    "**/out": true
+  },
+  "files.associations": {
+    "*.css": "tailwindcss"
+  },
+  "files.eol": "\n",
+  "editor.tabSize": 2,
+  "eslint.enable": false
+}
