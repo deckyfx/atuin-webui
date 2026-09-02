@@ -27,7 +27,9 @@ export function Card({ title, sub, action, children }: Props) {
 export function Skeleton({ height = 80 }: { height?: number }) {
   return (
     <div
-      className="rounded-lg bg-hover animate-pulse"
+      // motion-safe: a pulsing placeholder is exactly the kind of animation
+      // that triggers discomfort for users who have asked for reduced motion.
+      className="rounded-lg bg-hover motion-safe:animate-pulse"
       style={{ height }}
       aria-hidden="true"
     />

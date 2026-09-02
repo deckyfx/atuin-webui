@@ -43,9 +43,27 @@ const define = {
 
 // Restrict to the host platform with: bun run build.ts --current
 const currentOnly = process.argv.includes("--current");
-const selected = currentOnly
-  ? targets.filter((t) => t.target === `bun-${process.platform === "darwin" ? "darwin" : "linux"}-${process.arch === "arm64" ? "arm64" : "x64"}`)
-  : targets;
+/** Maps the host to its release target, rather than assuming linux. */
+function hostTarget(): BunCrossTarget | null {
+  const arch = process.arch === "arm64" ? "arm64" : "x64";
+  if (process.platform === "darwin") return `bun-darwin-${arch}` as BunCrossTarget;
+  if (process.platform === "linux") return `bun-linux-${arch}` as BunCrossTarget;
+  // Windows: only x64 is published, and the previous expression silently
+  // selected a linux binary here.
+  if (process.platform === "win32" && arch === "x64") return "bun-windows-x64";
+  return null;
+}
+
+const host = hostTarget();
+if (currentOnly && !host) {
+  console.error(`No Bun target for ${process.platform}/${process.arch}.`);
+  process.exit(1);
+}
+const selected = currentOnly ? targets.filter((t) => t.target === host) : targets;
+if (currentOnly && selected.length === 0) {
+  console.error(`Host target ${host} is not in the configured target list.`);
+  process.exit(1);
+}
 
 console.log("🏗️  Building atuin-dashboard\n");
 

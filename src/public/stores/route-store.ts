@@ -67,14 +67,19 @@ export const useRouteStore = create<RouteState>((set) => ({
   },
 
   init: () => {
-    const sync = () => set({ route: parseHash(window.location.hash) });
-    sync();
+    const sync = () => {
+      const route = parseHash(window.location.hash);
+      set({ route });
 
-    // Normalise a bare or unknown hash so the address bar always shows a
-    // route that round-trips.
-    if (!window.location.hash) {
-      window.history.replaceState(null, "", toHash(DEFAULT.section));
-    }
+      // An unsupported fragment falls back to the default section, so rewrite
+      // the address bar to match. Otherwise the URL keeps claiming a route the
+      // app is not on, and sharing or reloading it is misleading.
+      const canonical = toHash(route.section, route.rest);
+      if (window.location.hash !== canonical) {
+        window.history.replaceState(null, "", canonical);
+      }
+    };
+    sync();
 
     window.addEventListener("hashchange", sync);
     return () => window.removeEventListener("hashchange", sync);

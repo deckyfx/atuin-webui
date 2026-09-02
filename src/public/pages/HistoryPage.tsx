@@ -59,14 +59,31 @@ export function HistoryPage() {
     if (search) params.set("search", search);
     if (host) params.set("hostname", host);
 
-    // Debounce so typing does not fire a query per keystroke.
+    // Debounce so typing does not fire a query per keystroke, and abort in
+    // flight on the next change: without it a slow earlier request can resolve
+    // after a later one and overwrite current results with stale rows.
+    const controller = new AbortController();
     const t = setTimeout(() => {
-      fetch(`/api/history?${params}`)
-        .then((r) => r.json())
+      fetch(`/api/history?${params}`, { signal: controller.signal })
+        .then((r) => {
+          // fetch() resolves for 4xx/5xx, so an error body would reach setData
+          // and the next render would throw on data.rows.map.
+          if (!r.ok) throw new Error(`Request failed (${r.status})`);
+          return r.json();
+        })
         .then(setData)
-        .finally(() => setLoading(false));
+        .catch((err) => {
+          if (err instanceof Error && err.name === "AbortError") return;
+          push("error", err instanceof Error ? err.message : "Failed to load history.");
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
     }, 250);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      controller.abort();
+    };
   }, [search, host, offset, reloadKey]);
 
   const toggle = useCallback((command: string) => {
@@ -225,7 +242,7 @@ export function HistoryPage() {
       )}
 
       <div className="rounded-xl border border-line overflow-hidden">
-        <table className="w-full text-sm">
+        <table aria-label="Command history" className="w-full text-sm">
           <thead className="bg-raised text-ink-subtle text-xs uppercase tracking-wider">
             <tr>
               <th className="w-10 px-3 py-3">
@@ -242,7 +259,7 @@ export function HistoryPage() {
               <th className="text-left px-4 py-3 font-medium w-44">When</th>
               <th className="text-right px-4 py-3 font-medium w-24">Took</th>
               <th className="text-right px-4 py-3 font-medium w-16">Exit</th>
-              <th className="w-12" />
+              <th className="w-12"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">

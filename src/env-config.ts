@@ -185,8 +185,18 @@ class EnvConfig {
   }
 
   get PORT(): number {
-    const port = Bun.env.PORT;
-    return port ? parseInt(port, 10) : 3001;
+    const raw = Bun.env.PORT;
+    // `undefined`, not falsy: PORT="" is a configured value and a mistake,
+    // and treating it as unset silently binds the default instead of saying so.
+    if (raw === undefined) return 3001;
+
+    // parseInt("3001abc") is 3001 and parseInt("abc") is NaN, which Bun then
+    // turns into a confusing listen error far from the actual mistake.
+    const port = Number(raw);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error(`Invalid PORT ${JSON.stringify(raw)}: expected 1-65535.`);
+    }
+    return port;
   }
 
   get NODE_ENV(): string {

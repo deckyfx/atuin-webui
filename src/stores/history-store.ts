@@ -59,8 +59,10 @@ export class HistoryStore {
 
   /** Paginated, filtered history listing, newest first. */
   static async search(query: HistoryQuery): Promise<HistoryPage> {
-    const limit = Math.min(query.limit ?? 50, 500);
-    const offset = query.offset ?? 0;
+    // Clamped at both ends: a negative limit or offset reaches SQLite as a
+    // negative LIMIT/OFFSET, which silently changes the query's meaning.
+    const limit = Math.min(Math.max(Math.trunc(query.limit ?? 50), 1), 500);
+    const offset = Math.max(Math.trunc(query.offset ?? 0), 0);
 
     const filters = [this.liveOnly()];
     if (query.search) filters.push(like(clientHistory.command, `%${query.search}%`));
@@ -131,6 +133,55 @@ export class HistoryStore {
       .groupBy(sql`1`)
       .orderBy(desc(count()))
       .limit(limit);
+  }
+
+  /**
+   * What `atuin history dedup` would remove.
+   *
+   * dedup deletes entries sharing command, cwd and hostname, keeping one of
+   * each group — so the removable count is total rows minus distinct groups.
+   * Computed here rather than by running the command, because the CLI has no
+   * dry-run and the confirm has to show a scope the user can actually inspect.
+   */
+  static async duplicatePreview(sampleSize = 20): Promise<{
+    removable: number;
+    groups: number;
+    sample: Array<{ command: string; copies: number }>;
+  }> {
+    const db = getHistoryDb();
+
+    const grouped = await db
+      .select({
+        command: clientHistory.command,
+        copies: count(),
+      })
+      .from(clientHistory)
+      .where(this.liveOnly())
+      .groupBy(clientHistory.command, clientHistory.cwd, clientHistory.hostname)
+      .having(sql`count(*) > 1`)
+      .orderBy(desc(count()))
+      .limit(sampleSize);
+
+    const [agg] = await db
+      .select({
+        removable: sql<number>`coalesce(sum(c - 1), 0)`,
+        groups: sql<number>`count(*)`,
+      })
+      .from(
+        db
+          .select({ c: count().as("c") })
+          .from(clientHistory)
+          .where(this.liveOnly())
+          .groupBy(clientHistory.command, clientHistory.cwd, clientHistory.hostname)
+          .having(sql`count(*) > 1`)
+          .as("dupes")
+      );
+
+    return {
+      removable: agg?.removable ?? 0,
+      groups: agg?.groups ?? 0,
+      sample: grouped,
+    };
   }
 
   /** Daily command counts for the trailing `days` window. */

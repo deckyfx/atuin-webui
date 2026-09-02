@@ -38,6 +38,12 @@ export function PrunePage() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [verbPreview, setVerbPreview] = useState<{ total: number; unique: number; bare: number } | null>(null);
   const [verbConfirming, setVerbConfirming] = useState(false);
+  const [dedupConfirming, setDedupConfirming] = useState(false);
+  const [dedupPreview, setDedupPreview] = useState<{
+    removable: number;
+    groups: number;
+    sample: Array<{ command: string; copies: number }>;
+  } | null>(null);
 
   /** Commands that are navigation rather than work. */
   const NOISE = ["cd", "ls", "ll", "cat", "clear", "pwd", "exit"];
@@ -59,6 +65,56 @@ export function PrunePage() {
     filterMode: "global" as const,
     ...(before ? { before } : {}),
   });
+
+  /** Sends the count the user actually confirmed, so a changed scope is
+   *  rejected rather than silently deleting a different set. */
+  async function runDedup(expectedRemovable: number) {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/dedup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRemovable }),
+      });
+      const body = await res.json();
+      if (res.status === 409) {
+        setDedupPreview(body.preview ?? null);
+        setResult(body.message);
+        return;
+      }
+      if (!res.ok) {
+        setResult(`Dedup failed: ${body.message ?? `HTTP ${res.status}`}`);
+        return;
+      }
+      setResult(body.output || "Duplicates removed.");
+      setDedupConfirming(false);
+      setDedupPreview(null);
+      loadVerbs();
+    } catch (err) {
+      setResult(`Dedup failed: ${err instanceof Error ? err.message : "request failed"}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function previewDedup() {
+    setBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/dedup/preview");
+      const body = await res.json();
+      if (!res.ok || typeof body.removable !== "number") {
+        setResult(`Preview failed: ${body.message ?? `HTTP ${res.status}`}`);
+        return;
+      }
+      setDedupPreview(body);
+      setDedupConfirming(true);
+    } catch (err) {
+      setResult(`Preview failed: ${err instanceof Error ? err.message : "request failed"}`);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function previewVerbs() {
     setBusy(true);
@@ -89,12 +145,25 @@ export function PrunePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ verbs: [...picked] }),
       });
-      const body = await res.json();
-      setResult(`Purged ${body.removed?.toLocaleString() ?? 0} entries.`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // Previously any response was reported as a purge, so a 4xx/5xx read
+        // as "done" while nothing had been deleted.
+        setResult(`Purge failed: ${body.message ?? `HTTP ${res.status}`}`);
+        return;
+      }
+      const failed = (body.results ?? []).filter((r: { ok: boolean }) => !r.ok);
+      setResult(
+        failed.length
+          ? `Purged ${body.removed?.toLocaleString() ?? 0} entries; ${failed.length} command(s) refused.`
+          : `Purged ${body.removed?.toLocaleString() ?? 0} entries.`
+      );
       setPicked(new Set());
       setVerbPreview(null);
       setVerbConfirming(false);
       loadVerbs();
+    } catch (err) {
+      setResult(`Purge failed: ${err instanceof Error ? err.message : "request failed"}`);
     } finally {
       setBusy(false);
     }
@@ -276,10 +345,14 @@ export function PrunePage() {
 
       <div className="rounded-xl border border-line p-5 mb-5 space-y-4">
         <div>
-          <label className="block text-xs uppercase tracking-wider text-ink-subtle mb-2">
+          <label
+            htmlFor="prune-match"
+            className="block text-xs uppercase tracking-wider text-ink-subtle mb-2"
+          >
             Match
           </label>
           <input
+            id="prune-match"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -292,10 +365,14 @@ export function PrunePage() {
 
         <div className="flex gap-4">
           <div className="flex-1">
-            <label className="block text-xs uppercase tracking-wider text-ink-subtle mb-2">
+            <label
+              htmlFor="prune-mode"
+              className="block text-xs uppercase tracking-wider text-ink-subtle mb-2"
+            >
               Mode
             </label>
             <select
+              id="prune-mode"
               value={searchMode}
               onChange={(e) => {
                 setSearchMode(e.target.value as SearchMode);
@@ -309,10 +386,14 @@ export function PrunePage() {
             </select>
           </div>
           <div className="flex-1">
-            <label className="block text-xs uppercase tracking-wider text-ink-subtle mb-2">
+            <label
+              htmlFor="prune-before"
+              className="block text-xs uppercase tracking-wider text-ink-subtle mb-2"
+            >
               Older than (optional)
             </label>
             <input
+              id="prune-before"
               value={before}
               onChange={(e) => {
                 setBefore(e.target.value);
@@ -403,12 +484,23 @@ export function PrunePage() {
 
       <div className="flex gap-3">
         <button
-          onClick={() => post("/api/dedup")}
+          onClick={() => {
+            // Dedup deletes across every synced machine like any other prune,
+            // so it shows its scope first and confirms second, rather than
+            // firing on a single click.
+            if (dedupConfirming && dedupPreview) {
+              void runDedup(dedupPreview.removable);
+            } else {
+              void previewDedup();
+            }
+          }}
           disabled={busy}
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-raised border border-line text-ink-muted text-sm hover:text-ink hover:bg-hover disabled:opacity-40"
         >
           <CopyMinus size={14} />
-          Remove duplicates
+          {dedupConfirming
+            ? `Confirm: delete ${dedupPreview?.removable.toLocaleString() ?? ""} duplicates`
+            : "Remove duplicates"}
         </button>
         <button
           onClick={() => post("/api/sync")}
@@ -419,6 +511,37 @@ export function PrunePage() {
           Sync now
         </button>
       </div>
+
+      {dedupPreview && dedupConfirming && (
+        <div className="mt-4 rounded-xl border border-warn/30 bg-warn-soft p-5">
+          <p className="text-warn font-semibold text-sm mb-1">
+            {dedupPreview.removable.toLocaleString()} duplicate entries would be deleted
+          </p>
+          <p className="text-ink-subtle text-xs mb-3">
+            Across {dedupPreview.groups.toLocaleString()} commands that repeat with the same
+            directory and machine. One copy of each is kept.
+          </p>
+          {dedupPreview.sample.length > 0 && (
+            <div className="max-h-40 overflow-y-auto rounded-lg bg-surface border border-line p-2.5">
+              {dedupPreview.sample.map((d) => (
+                <div key={d.command} className="flex gap-3 text-xs">
+                  <code className="font-mono text-ink-muted truncate flex-1">{d.command}</code>
+                  <span className="text-ink-subtle tabular-nums shrink-0">×{d.copies}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={() => {
+              setDedupConfirming(false);
+              setDedupPreview(null);
+            }}
+            className="mt-3 text-xs text-ink-muted hover:text-ink"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {result && (
         <pre className="mt-5 rounded-lg bg-raised border border-line p-4 text-xs text-ink-muted whitespace-pre-wrap">

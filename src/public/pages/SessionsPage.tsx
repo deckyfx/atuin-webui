@@ -3,14 +3,10 @@ import React, { useEffect, useState } from "react";
 interface Session {
   id: number;
   userId: number | null;
-  token: string;
+  /** Already redacted server-side; the full token never leaves the server. */
+  tokenFingerprint: string;
   username: string | null;
   email: string | null;
-}
-
-function maskToken(token: string): string {
-  if (token.length <= 12) return token;
-  return token.slice(0, 6) + "••••••••••" + token.slice(-6);
 }
 
 export function SessionsPage() {
@@ -21,13 +17,21 @@ export function SessionsPage() {
   const [confirmRevoke, setConfirmRevoke] = useState<number | null>(null);
 
   async function load() {
-    const res = await fetch("/api/sessions");
-    if (!res.ok) {
-      setError("Failed to load sessions");
-    } else {
+    // try/finally: a rejected fetch previously skipped setLoading(false) and
+    // left the page on its spinner forever, with an unhandled rejection.
+    try {
+      const res = await fetch("/api/sessions");
+      if (!res.ok) {
+        setError("Failed to load sessions");
+        return;
+      }
       setSessions(await res.json());
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load sessions");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
@@ -39,13 +43,20 @@ export function SessionsPage() {
     }
     setRevoking(sessionId);
     setConfirmRevoke(null);
-    const r = await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
-    if (r.ok) {
-      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-    } else {
-      setError("Failed to revoke session");
+    try {
+      const r = await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
+      if (r.ok) {
+        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      } else {
+        setError("Failed to revoke session");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to revoke session");
+    } finally {
+      // In finally: a rejected DELETE previously left the row disabled until
+      // a page reload.
+      setRevoking(null);
     }
-    setRevoking(null);
   }
 
   if (loading) return <div className="text-ink-subtle text-sm p-8">Loading…</div>;
@@ -64,7 +75,7 @@ export function SessionsPage() {
         <div className="text-ink-subtle text-sm">No active sessions.</div>
       ) : (
         <div className="rounded-xl border border-line overflow-hidden">
-          <table className="w-full text-sm">
+          <table aria-label="Active sync-server sessions" className="w-full text-sm">
             <thead>
               <tr className="border-b border-line bg-hover">
                 <th className="text-left px-4 py-3 text-ink-subtle font-medium">ID</th>
@@ -87,7 +98,7 @@ export function SessionsPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-ink-muted">
-                    {maskToken(session.token)}
+                    {session.tokenFingerprint}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {confirmRevoke === session.id ? (

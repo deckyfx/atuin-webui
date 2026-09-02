@@ -60,19 +60,23 @@ export function historyAvailable(): boolean {
 
 /** Reads the client's `host_id` and login `session` from meta.db. */
 export function readClientMeta(): { hostId?: string; loggedIn: boolean } {
+  let meta: Database | undefined;
   try {
-    const meta = new Database(envConfig.META_DB_PATH, { readonly: true });
+    meta = new Database(envConfig.META_DB_PATH, { readonly: true });
     const rows = meta
       .query<{ key: string; value: string }, []>(
         "select key, value from meta where key in ('host_id','session')"
       )
       .all();
-    meta.close();
 
     const map = new Map(rows.map((r) => [r.key, r.value]));
     return { hostId: map.get("host_id"), loggedIn: Boolean(map.get("session")) };
   } catch {
     // meta.db absent => atuin is not set up on this machine.
     return { loggedIn: false };
+  } finally {
+    // Closed on the failure path too: this runs on every /setup/status poll,
+    // so a leaked handle per failed call accumulates.
+    meta?.close();
   }
 }

@@ -32,29 +32,43 @@ export class UserStore {
       .from(users)
       .orderBy(users.createdAt);
 
-    const enriched = await Promise.all(
-      allUsers.map(async (user) => {
-        const [sessionRes, storeRes] = await Promise.all([
-          getServerDb().select({ count: count() }).from(sessions).where(eq(sessions.userId, user.id)),
-          getServerDb().select({ count: count() }).from(store).where(eq(store.userId, user.id)),
-        ]);
+    // Two grouped queries rather than 2N+1: the previous shape issued a pair
+    // of counts per user, and `store` holds a row per synced record, so the
+    // cost grew with both the user count and the size of the store.
+    const [sessionCounts, storeCounts] = await Promise.all([
+      getServerDb()
+        .select({ userId: sessions.userId, count: count() })
+        .from(sessions)
+        .groupBy(sessions.userId),
+      getServerDb()
+        .select({ userId: store.userId, count: count() })
+        .from(store)
+        .groupBy(store.userId),
+    ]);
 
-        return {
-          ...user,
-          sessionCount: sessionRes[0]?.count ?? 0,
-          storeRecords: storeRes[0]?.count ?? 0,
-        };
-      })
-    );
+    const sessionByUser = new Map(sessionCounts.map((r) => [r.userId, r.count]));
+    const storeByUser = new Map(storeCounts.map((r) => [r.userId, r.count]));
 
-    return enriched;
+    return allUsers.map((user) => ({
+      ...user,
+      sessionCount: sessionByUser.get(user.id) ?? 0,
+      storeRecords: storeByUser.get(user.id) ?? 0,
+    }));
   }
 
-  /** Delete a user and all their associated data */
+  /**
+   * Deletes a user and everything belonging to them.
+   *
+   * Wrapped in a transaction: as three independent statements, a failure
+   * partway through left the account with its sessions or records already
+   * gone — or worse, left orphaned sessions pointing at a deleted user.
+   */
   static async delete(userId: number): Promise<boolean> {
-    await getServerDb().delete(sessions).where(eq(sessions.userId, userId));
-    await getServerDb().delete(store).where(eq(store.userId, userId));
-    const result = await getServerDb().delete(users).where(eq(users.id, userId)).returning();
-    return result.length > 0;
+    return getServerDb().transaction((tx) => {
+      tx.delete(sessions).where(eq(sessions.userId, userId)).run();
+      tx.delete(store).where(eq(store.userId, userId)).run();
+      const result = tx.delete(users).where(eq(users.id, userId)).returning().all();
+      return result.length > 0;
+    });
   }
 }

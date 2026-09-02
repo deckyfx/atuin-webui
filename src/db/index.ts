@@ -27,7 +27,11 @@ let cached: BunSQLiteDatabase<typeof schema> | null = null;
 export function getServerDb(): BunSQLiteDatabase<typeof schema> {
   if (cached) return cached;
   try {
-    const sqlite = new Database(envConfig.SERVER_DB_PATH);
+    const path = envConfig.SERVER_DB_PATH;
+    // `new Database(path)` creates the file when it is absent, so a typo in
+    // ATUIN_SERVER_DB_PATH silently produced an empty database and the admin
+    // pages reported zero users instead of a misconfiguration.
+    const sqlite = new Database(path, { create: false, readwrite: true });
     // WAL for concurrent access alongside the running atuin server.
     sqlite.run("PRAGMA journal_mode=WAL;");
     sqlite.run("PRAGMA busy_timeout=5000;");

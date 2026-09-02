@@ -70,7 +70,7 @@ export function ActivityPage() {
 
           {/* Table */}
           <div className="rounded-xl border border-line overflow-hidden">
-            <table className="w-full text-sm">
+            <table aria-label="Record-store activity by day" className="w-full text-sm">
               <thead>
                 <tr className="border-b border-line bg-hover">
                   <th className="text-left px-4 py-3 text-ink-subtle font-medium">Date</th>

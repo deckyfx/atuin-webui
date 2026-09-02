@@ -222,9 +222,17 @@ export class AtuinCli {
     return { total: matches.length, unique: unique.length, sample: unique.slice(0, 200) };
   }
 
-  /** Appends deletion records for everything matching the rule. */
+  /**
+   * Appends deletion records for everything matching the rule.
+   *
+   * Carries `--include-duplicates` so the argument list matches the preview's
+   * exactly. atuin deletes every matching entry either way, but a preview and
+   * a delete that differ in their flags are one upstream change away from
+   * differing in their results, and the whole confirm step rests on them
+   * being the same query.
+   */
   static async deleteMatching(rule: SearchRule): Promise<CommandResult> {
-    return this.run(this.searchArgs(rule, ["--delete"]));
+    return this.run(this.searchArgs(rule, ["--delete", "--include-duplicates"]));
   }
 
   /**
@@ -265,6 +273,12 @@ export class AtuinCli {
   static async deleteExact(
     command: string
   ): Promise<CommandResult & { refused?: ExactPreview }> {
+    // Re-checked immediately before the delete rather than trusting an
+    // earlier preview: the CLI cannot express "this string and nothing
+    // longer", so the guard is a check-then-act. A command that arrives
+    // between this check and the delete would still be swept up; the window
+    // is milliseconds, and the alternative is dropping per-command delete
+    // entirely.
     const preview = await this.previewExact(command);
     if (preview.overmatches.length > 0) {
       return {
@@ -350,10 +364,16 @@ export class AtuinCli {
   /**
    * One-time bootstrap for a client that has never logged in.
    *
-   * The password is passed via argv because `atuin login` reads it with
-   * rpassword, which requires a TTY and cannot accept a pipe -- so it is
-   * briefly visible in the process table. Acceptable on a single-user host;
-   * on a shared box, run `atuin login` by hand instead.
+   * Both secrets go through argv, and are therefore briefly readable in
+   * /proc by other users on the host. This is not preventable through the
+   * CLI: `atuin login` reads the password with rpassword, which requires a
+   * TTY and rejects a pipe; there is no --password-stdin; and pre-writing
+   * data_dir/key does not help because login clears it before prompting.
+   *
+   * What bounds it instead: the dashboard binds loopback by default, this
+   * endpoint refuses once a session exists, and neither value is persisted
+   * by the dashboard. On a shared host, run `atuin login` by hand and skip
+   * this flow.
    *
    * Nothing here is persisted by the dashboard: atuin stores the resulting
    * session token in meta.db and the key at data_dir/key.

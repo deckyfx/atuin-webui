@@ -2,9 +2,11 @@
 // Regenerate with: bun run db:generate
 import journalJson from "../../drizzle/meta/_journal.json" with { type: "json" };
 import m0000SmartBloodaxe from "../../drizzle/0000_smart_bloodaxe.sql" with { type: "text" };
+import m0001BlackMaginty from "../../drizzle/0001_black_maginty.sql" with { type: "text" };
 
 const files: Record<string, string> = {
   "0000_smart_bloodaxe.sql": m0000SmartBloodaxe,
+  "0001_black_maginty.sql": m0001BlackMaginty,
 };
 
 export const embeddedMigrations = {

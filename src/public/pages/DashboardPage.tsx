@@ -40,6 +40,9 @@ export function DashboardPage() {
   const [hosts, setHosts] = useState<HostCount[]>([]);
   const [activity, setActivity] = useState<DayCount[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Distinct from "arrays are empty": a genuinely empty history would
+  // otherwise show loading placeholders forever.
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -54,7 +57,8 @@ export function DashboardPage() {
         setHosts(h);
         setActivity(a);
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoaded(true));
   }, []);
 
   const noiseCount = verbs
@@ -116,7 +120,7 @@ export function DashboardPage() {
       </div>
 
       <Card title="Daily activity" sub="Commands recorded per day, last 30 days">
-        {activity.length === 0 && overview === null ? (
+        {!loaded ? (
           <Skeleton height={160} />
         ) : (
           <ActivityChart data={activity} />
@@ -125,7 +129,7 @@ export function DashboardPage() {
 
       <div className="grid grid-cols-2 gap-6">
         <Card title="Most-run commands" sub="By first word — the batch-prune targets">
-          {verbs.length === 0 ? (
+          {!loaded ? (
             <Skeleton height={200} />
           ) : (
             <BarList items={verbs.slice(0, 10).map((v) => ({ label: v.verb, value: v.count }))} />
@@ -133,7 +137,7 @@ export function DashboardPage() {
         </Card>
 
         <Card title="By machine" sub="Where the commands were run">
-          {hosts.length === 0 ? (
+          {!loaded ? (
             <Skeleton height={200} />
           ) : (
             <BarList

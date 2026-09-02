@@ -28,9 +28,34 @@ export const pruneAudit = sqliteTable(
     rule: text("rule"),
     /** How many commands the preview matched before execution. */
     matchedCount: integer("matched_count").notNull().default(0),
-    /** First N matched commands, JSON array -- the only record of what went. */
+    /**
+     * First N matched commands, JSON array — the only record of what went.
+     *
+     * Redacted before storage (see AuditStore.redactCommand): shell history
+     * routinely carries tokens inline, so an unredacted log would be a durable
+     * copy of exactly the material a deletion was often meant to remove.
+     */
     sample: text("sample"),
+    /**
+     * Superseded by {@link status}; kept so this change is a pure column
+     * addition. Dropping it at the same time would make the migration a
+     * rename-or-drop question that drizzle-kit can only resolve through an
+     * interactive prompt — which the compiled binary's migration path has no
+     * way to answer.
+     *
+     * @deprecated read `status`.
+     */
     succeeded: integer("succeeded", { mode: "boolean" }).notNull().default(true),
+
+    /**
+     * "pending" until the operation reports back, then "succeeded"/"failed".
+     *
+     * A boolean cannot distinguish "this failed" from "we never found out":
+     * if the completing update is lost, a boolean row stays false and the
+     * audit page claims a destructive operation failed when it in fact
+     * succeeded.
+     */
+    status: text("status").notNull().default("pending"),
     output: text("output"),
     createdAt: text("created_at")
       .notNull()

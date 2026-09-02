@@ -124,17 +124,19 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       await HistoryStore.search({
         search: query.search,
         hostname: query.hostname,
-        exit: query.exit === undefined ? undefined : Number(query.exit),
-        limit: query.limit === undefined ? undefined : Number(query.limit),
-        offset: query.offset === undefined ? undefined : Number(query.offset),
+        exit: query.exit,
+        limit: query.limit,
+        offset: query.offset,
       }),
     {
+      // t.Numeric coerces and *validates*: as t.String() these reached
+      // Number() unchecked, so "abc" became NaN and silently changed the query.
       query: t.Object({
         search: t.Optional(t.String()),
         hostname: t.Optional(t.String()),
-        exit: t.Optional(t.String()),
-        limit: t.Optional(t.String()),
-        offset: t.Optional(t.String()),
+        exit: t.Optional(t.Numeric()),
+        limit: t.Optional(t.Numeric({ minimum: 1, maximum: 500 })),
+        offset: t.Optional(t.Numeric({ minimum: 0 })),
       }),
     }
   )
@@ -153,15 +155,29 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
   .post(
     "/history/delete-exact",
     async ({ body, set }) => {
-      const res = await AtuinCli.deleteExact(body.command);
-      await AuditStore.record({
+      // Counted before the delete: `matchedCount` records how many entries
+      // went, and 1 was the number of *commands* asked for, not the number of
+      // rows removed.
+      let matched = 0;
+      try {
+        matched = (await AtuinCli.previewExact(body.command)).total;
+      } catch {
+        // Non-fatal; the audit entry simply will not know the count.
+      }
+
+      const auditId = await AuditStore.begin({
         action: "delete-exact",
         profile: envConfig.PROFILE,
-        rule: JSON.stringify({ command: body.command, mode: "exact" }),
-        matchedCount: res.refused ? 0 : 1,
-        sample: JSON.stringify([body.command]),
+        rule: JSON.stringify({ mode: "exact" }),
+        matchedCount: matched,
+        sample: [body.command],
+      });
+
+      const res = await AtuinCli.deleteExact(body.command);
+      await AuditStore.complete(auditId, {
         succeeded: res.ok,
-        output: (res.stdout || res.stderr).trim().slice(0, 4000),
+        matchedCount: res.refused ? 0 : matched,
+        output: (res.stdout || res.stderr).trim(),
       });
 
       if (!res.ok) {
@@ -179,6 +195,13 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
     async ({ body }) => {
       // Sequential rather than parallel: each delete appends to the record
       // store, and concurrent writers would contend on the same sqlite file.
+      const auditId = await AuditStore.begin({
+        action: "delete-batch",
+        profile: envConfig.PROFILE,
+        rule: JSON.stringify({ mode: "exact", requested: body.commands.length }),
+        sample: body.commands,
+      });
+
       const results: Array<{
         command: string;
         ok: boolean;
@@ -186,8 +209,30 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
         overmatches?: string[];
       }> = [];
 
+      // Rows removed, not commands accepted: one command can match many
+      // entries, so counting successful requests understated the damage in the
+      // same way the single-delete path did before it was corrected.
+      let removedRows = 0;
+
       for (const command of body.commands) {
+        let matched: number;
+        try {
+          matched = (await AtuinCli.previewExact(command)).total;
+        } catch (err) {
+          // Refused rather than deleted blind: the rest of the batch still
+          // runs, and this one is reported back.
+          results.push({
+            command,
+            ok: false,
+            message: `Skipped: could not preview scope. ${
+              err instanceof Error ? err.message : ""
+            }`.trim(),
+          });
+          continue;
+        }
+
         const res = await AtuinCli.deleteExact(command);
+        if (res.ok) removedRows += matched;
         results.push({
           command,
           ok: res.ok,
@@ -197,21 +242,21 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       }
 
       const deleted = results.filter((r) => r.ok).length;
-      await AuditStore.record({
-        action: "delete-batch",
-        profile: envConfig.PROFILE,
-        rule: JSON.stringify({ mode: "exact", requested: body.commands.length }),
-        matchedCount: deleted,
-        sample: JSON.stringify(results.filter((r) => r.ok).map((r) => r.command).slice(0, 200)),
+      await AuditStore.complete(auditId, {
         succeeded: deleted === body.commands.length,
+        matchedCount: removedRows,
         output: results
           .filter((r) => !r.ok)
           .map((r) => `${r.command}: ${r.message}`)
-          .join("\n")
-          .slice(0, 4000),
+          .join("\n"),
       });
 
-      return { deleted, refused: results.filter((r) => !r.ok), total: body.commands.length };
+      return {
+        deleted,
+        removedRows,
+        refused: results.filter((r) => !r.ok),
+        total: body.commands.length,
+      };
     },
     {
       body: t.Object({
@@ -247,23 +292,32 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       }
       // Capture what is about to go: the deletion propagates to every synced
       // machine and the dashboard cannot undo it.
-      let matched = { total: 0, unique: 0, sample: [] as string[] };
+      let matched: { total: number; unique: number; sample: string[] };
       try {
         matched = await AtuinCli.previewDelete(rule);
-      } catch {
-        // A failed preview must not block an explicit delete, but it does mean
-        // the audit entry will not know what was removed.
+      } catch (err) {
+        // No preview, no delete: an irreversible deletion of unknown scope is
+        // exactly what the preview exists to prevent.
+        set.status = 503;
+        return {
+          message: `Refusing to delete: could not preview the scope first. ${
+            err instanceof Error ? err.message : ""
+          }`.trim(),
+        };
       }
 
-      const res = await AtuinCli.deleteMatching(rule);
-      await AuditStore.record({
+      const auditId = await AuditStore.begin({
         action: "delete",
         profile: envConfig.PROFILE,
         rule: JSON.stringify(rule),
         matchedCount: matched.total,
-        sample: JSON.stringify(matched.sample),
+        sample: matched.sample,
+      });
+
+      const res = await AtuinCli.deleteMatching(rule);
+      await AuditStore.complete(auditId, {
         succeeded: res.ok,
-        output: (res.stdout || res.stderr).trim().slice(0, 4000),
+        output: (res.stdout || res.stderr).trim(),
       });
 
       if (!res.ok) {
@@ -303,15 +357,28 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
     async ({ body }) => {
       // Sequential: each delete appends to the record store, and concurrent
       // writers would contend on the same sqlite file.
+      const auditId = await AuditStore.begin({
+        action: "purge-verbs",
+        profile: envConfig.PROFILE,
+        rule: JSON.stringify({ verbs: body.verbs, mode: "verb-prefix" }),
+      });
+
       const results: Array<{ verb: string; ok: boolean; removed: number; message?: string }> = [];
 
       for (const verb of body.verbs) {
-        let removed = 0;
+        let removed: number;
         try {
           removed = (await AtuinCli.previewVerb(verb)).total;
-        } catch {
-          // Preview failure must not block an explicit purge; the audit entry
-          // simply will not know the count.
+        } catch (err) {
+          results.push({
+            verb,
+            ok: false,
+            removed: 0,
+            message: `Skipped: could not preview scope. ${
+              err instanceof Error ? err.message : ""
+            }`.trim(),
+          });
+          continue;
         }
         const res = await AtuinCli.deleteVerb(verb);
         results.push({
@@ -323,30 +390,47 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       }
 
       const removed = results.reduce((n, r) => n + r.removed, 0);
-      await AuditStore.record({
-        action: "purge-verbs",
-        profile: envConfig.PROFILE,
-        rule: JSON.stringify({ verbs: body.verbs, mode: "verb-prefix" }),
-        matchedCount: removed,
-        sample: JSON.stringify(results.map((r) => `${r.verb} (${r.removed})`)),
+      await AuditStore.complete(auditId, {
         succeeded: results.every((r) => r.ok),
-        output: results.filter((r) => !r.ok).map((r) => `${r.verb}: ${r.message}`).join("\n").slice(0, 4000),
+        matchedCount: removed,
+        output: results.filter((r) => !r.ok).map((r) => `${r.verb}: ${r.message}`).join("\n"),
       });
 
       return { removed, results };
     },
     { body: t.Object({ verbs: t.Array(t.String({ minLength: 1 }), { minItems: 1, maxItems: 50 }) }) }
   )
-  .post("/dedup", async () => {
-    const res = await AtuinCli.dedup();
-    await AuditStore.record({
-      action: "dedup",
-      profile: envConfig.PROFILE,
-      succeeded: res.ok,
-      output: (res.stdout || res.stderr).trim().slice(0, 4000),
-    });
-    return { success: res.ok, output: (res.stdout || res.stderr).trim() };
-  })
+  .get("/dedup/preview", async () => await HistoryStore.duplicatePreview(20))
+  .post(
+    "/dedup",
+    async ({ body, set }) => {
+      // Revalidated against what the caller actually saw: history keeps
+      // arriving, and dedup run against a newer database would delete entries
+      // that were never previewed.
+      const current = await HistoryStore.duplicatePreview(0);
+      if (body.expectedRemovable !== current.removable) {
+        set.status = 409;
+        return {
+          message:
+            "The duplicate set changed since it was previewed. Review the new scope and confirm again.",
+          preview: current,
+        };
+      }
+
+      const auditId = await AuditStore.begin({
+        action: "dedup",
+        profile: envConfig.PROFILE,
+        matchedCount: current.removable,
+      });
+      const res = await AtuinCli.dedup();
+      await AuditStore.complete(auditId, {
+        succeeded: res.ok,
+        output: (res.stdout || res.stderr).trim(),
+      });
+      return { success: res.ok, output: (res.stdout || res.stderr).trim() };
+    },
+    { body: t.Object({ expectedRemovable: t.Integer({ minimum: 0 }) }) }
+  )
   .get("/audit", async () => await AuditStore.recent(100))
   .post("/sync", async () => {
     const res = await AtuinCli.sync();
@@ -361,25 +445,27 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
   .delete(
     "/users/:id",
     async ({ params, set }) => {
-      const deleted = await UserStore.delete(parseInt(params.id));
+      const deleted = await UserStore.delete(params.id);
       if (!deleted) {
         set.status = 404;
         return { message: "User not found" };
       }
       return { success: true };
     },
-    { params: t.Object({ id: t.String() }) }
+    // t.Numeric rejects "12abc" and "" outright; parseInt accepted both.
+    { params: t.Object({ id: t.Numeric() }) }
   )
   .get("/sessions", async () => await SessionStore.findAll())
   .delete(
     "/sessions/:id",
     async ({ params, set }) => {
-      const revoked = await SessionStore.revoke(parseInt(params.id));
+      const revoked = await SessionStore.revoke(params.id);
       if (!revoked) {
         set.status = 404;
         return { message: "Session not found" };
       }
       return { success: true };
     },
-    { params: t.Object({ id: t.String() }) }
+    // t.Numeric rejects "12abc" and "" outright; parseInt accepted both.
+    { params: t.Object({ id: t.Numeric() }) }
   );

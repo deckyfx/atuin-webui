@@ -57,7 +57,7 @@ export function UsersPage() {
         <div className="text-ink-subtle text-sm">No users found.</div>
       ) : (
         <div className="rounded-xl border border-line overflow-hidden">
-          <table className="w-full text-sm">
+          <table aria-label="Sync-server user accounts" className="w-full text-sm">
             <thead>
               <tr className="border-b border-line bg-hover">
                 <th className="text-left px-4 py-3 text-ink-subtle font-medium">ID</th>

@@ -1,0 +1,1 @@
+ALTER TABLE `prune_audit` ADD `status` text DEFAULT 'pending' NOT NULL;

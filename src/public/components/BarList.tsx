@@ -41,7 +41,7 @@ export function BarList({ items, unit, onSelect }: Props) {
             </span>
             <span className="flex-1 h-2.5 rounded-sm bg-hover overflow-hidden">
               <span
-                className="block h-full rounded-sm transition-[width] duration-500"
+                className="block h-full rounded-sm motion-safe:transition-[width] motion-safe:duration-500"
                 style={{
                   // Floor the width so a non-zero value is never invisible
                   // next to a dominant one (2 vs 15,000).

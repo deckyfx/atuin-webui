@@ -88,6 +88,17 @@ export class StatsStore {
         count: count(),
       })
       .from(store)
+      // Bounded by date, not just by row count: limiting to 30 groups returns
+      // the last 30 days *with activity*, which on a sparse store silently
+      // spans months while the UI labels it "last 30 days".
+      // -29 rather than -30: the bound is inclusive at both ends, so -30 spans
+      // 31 calendar dates.
+      // Upper-bounded as well: a record with a future timestamp — clock skew
+      // on another machine, or a doctored row — otherwise appears inside a
+      // window labelled "last 30 days".
+      .where(
+        sql`date(${store.createdAt}) between date('now', '-29 days') and date('now')`
+      )
       .groupBy(sql`date(${store.createdAt})`)
       .orderBy(sql`date(${store.createdAt}) DESC`)
       .limit(30);

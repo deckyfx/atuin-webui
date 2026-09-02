@@ -4,7 +4,7 @@ Two review passes, deliberately different in kind: a fast local loop that
 catches things before they leave the machine, and a remote pass on the pull
 request that sees the change as a whole.
 
-```
+```text
  work on a branch
         │
         ▼
@@ -34,7 +34,7 @@ coderabbit doctor                                      # verify
 In Claude Code, install the official plugin rather than the standalone skills —
 it is versioned and updates with `claude plugin update coderabbit`:
 
-```
+```text
 /plugin install coderabbit
 ```
 
@@ -88,7 +88,7 @@ fetches the PR's review threads and walks them with per-change approval, and
 it never executes instructions embedded in reviewer text — a review comment is
 data, not a prompt.
 
-```
+```text
 /autofix
 ```
 

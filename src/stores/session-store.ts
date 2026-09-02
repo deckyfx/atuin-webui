@@ -1,11 +1,18 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getServerDb } from "../db";
 import { sessions, users } from "../db/schema";
 
 export interface SessionWithUser {
   id: number;
   userId: number | null;
-  token: string;
+  /**
+   * First and last few characters only.
+   *
+   * `sessions.token` is a live bearer credential for the sync server: anyone
+   * holding one is that user. A fingerprint is enough to tell two sessions
+   * apart in the UI, which is all this view needs.
+   */
+  tokenFingerprint: string;
   username: string | null;
   email: string | null;
 }
@@ -17,7 +24,9 @@ export class SessionStore {
       .select({
         id: sessions.id,
         userId: sessions.userId,
-        token: sessions.token,
+        // Redacted in SQL rather than after the fact, so the full token is
+        // never materialised into a response object at all.
+        tokenFingerprint: sql<string>`substr(${sessions.token}, 1, 6) || '…' || substr(${sessions.token}, -4)`,
         username: users.username,
         email: users.email,
       })

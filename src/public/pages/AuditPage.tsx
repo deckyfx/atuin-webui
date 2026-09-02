@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ScrollText, CheckCircle2, XCircle } from "lucide-react";
+import { ScrollText, CheckCircle2, XCircle, HelpCircle } from "lucide-react";
 import { Card, Skeleton } from "../components/Card";
 
 interface AuditRow {
@@ -9,7 +9,7 @@ interface AuditRow {
   rule: string | null;
   matchedCount: number;
   sample: string | null;
-  succeeded: boolean;
+  status: "pending" | "succeeded" | "failed";
   output: string | null;
   createdAt: string;
 }
@@ -22,13 +22,19 @@ interface AuditRow {
  */
 export function AuditPage() {
   const [rows, setRows] = useState<AuditRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<number | null>(null);
 
   useEffect(() => {
     fetch("/api/audit")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`Request failed (${r.status})`);
+        return r.json();
+      })
       .then(setRows)
-      .catch(() => setRows([]));
+      // Distinguished from an empty log: presenting a failed fetch as "no
+      // destructive actions recorded" is the opposite of what happened.
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load."));
   }, []);
 
   return (
@@ -43,7 +49,13 @@ export function AuditPage() {
         </p>
       </header>
 
-      {rows === null && <Skeleton height={200} />}
+      {error && (
+        <p className="text-danger text-sm bg-danger-soft border border-danger/30 rounded-lg px-4 py-3">
+          Could not load the audit log: {error}
+        </p>
+      )}
+
+      {rows === null && !error && <Skeleton height={200} />}
 
       {rows?.length === 0 && (
         <Card title="Nothing yet" sub="Batch operations will appear here">
@@ -63,10 +75,15 @@ export function AuditPage() {
                 onClick={() => setOpen(isOpen ? null : row.id)}
                 className="w-full flex items-center gap-3 px-4 py-3 text-left"
               >
-                {row.succeeded ? (
+                {row.status === "succeeded" ? (
                   <CheckCircle2 size={16} className="text-brand shrink-0" />
-                ) : (
+                ) : row.status === "failed" ? (
                   <XCircle size={16} className="text-danger shrink-0" />
+                ) : (
+                  // Outcome never recorded — distinct from a known failure.
+                  <span title="Outcome unknown — the operation ran but its result was never recorded">
+                    <HelpCircle size={16} className="text-warn shrink-0" aria-label="Outcome unknown" />
+                  </span>
                 )}
                 <span className="font-medium text-sm text-ink">{row.action}</span>
                 <span className="text-xs text-ink-subtle font-mono">{row.profile}</span>

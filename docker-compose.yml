@@ -17,7 +17,11 @@ services:
       ATUIN_PROFILE: live
       # Pin the client release. Bump and restart to upgrade -- no rebuild.
       ATUIN_VERSION: "18.20.1"
-      # Where the client syncs to. `atuin` is the service name below.
+      # Where the client syncs to. `atuin` is the service name below, so this
+      # traffic stays on the compose network and never crosses the host.
+      # Records are end-to-end encrypted, but the session token is a bearer
+      # credential sent in the clear — use https:// for any sync server that is
+      # not reachable purely over a private container network.
       ATUIN_SYNC_ADDRESS: "http://atuin:8888"
       # Optional: enables the Users/Sessions/Activity admin pages. Read-only,
       # and the payloads are E2E-encrypted, so it never exposes command text.

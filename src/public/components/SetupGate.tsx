@@ -28,11 +28,21 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const refresh = () =>
     fetch("/api/setup/status")
-      .then((r) => r.json())
-      .then(setStatus)
-      .catch(() => setStatus(null));
+      .then((r) => {
+        if (!r.ok) throw new Error(`Request failed (${r.status})`);
+        return r.json();
+      })
+      .then((s: SetupStatus) => {
+        setStatus(s);
+        setLoadError(null);
+      })
+      // `status === null` also means "still loading", so a failure that only
+      // cleared it rendered a permanently blank page with no explanation.
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Request failed"));
 
   useEffect(() => {
     refresh();
@@ -49,17 +59,37 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ username, password, key }),
       });
       if (!res.ok) {
-        const body = await res.json();
-        setError(body.message ?? "Login failed.");
+        const body = await res.json().catch(() => ({}));
+        setError(body.message ?? `Login failed (${res.status}).`);
         return;
       }
       // Drop the secrets from component state immediately on success.
       setPassword("");
       setKey("");
       await refresh();
+    } catch (err) {
+      // A rejected fetch (server down mid-setup) previously surfaced nothing.
+      setError(err instanceof Error ? err.message : "Login request failed.");
     } finally {
       setBusy(false);
     }
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-8">
+        <div className="max-w-md">
+          <h1 className="text-xl font-semibold text-ink mb-2">Cannot reach the dashboard API</h1>
+          <p className="text-ink-muted text-sm">{loadError}</p>
+          <button
+            onClick={() => refresh()}
+            className="mt-4 rounded-lg border border-line px-3 py-1.5 text-sm text-ink-muted hover:text-ink hover:bg-hover"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (!status) return null;
@@ -104,10 +134,14 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-xs uppercase tracking-wider text-ink-subtle mb-2">
+            <label
+              htmlFor="setup-username"
+              className="block text-xs uppercase tracking-wider text-ink-subtle mb-2"
+            >
               Username
             </label>
             <input
+              id="setup-username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"
@@ -115,10 +149,14 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
             />
           </div>
           <div>
-            <label className="block text-xs uppercase tracking-wider text-ink-subtle mb-2">
+            <label
+              htmlFor="setup-password"
+              className="block text-xs uppercase tracking-wider text-ink-subtle mb-2"
+            >
               Password
             </label>
             <input
+              id="setup-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -127,10 +165,14 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
             />
           </div>
           <div>
-            <label className="block text-xs uppercase tracking-wider text-ink-subtle mb-2">
+            <label
+              htmlFor="setup-key"
+              className="block text-xs uppercase tracking-wider text-ink-subtle mb-2"
+            >
               Encryption key
             </label>
             <textarea
+              id="setup-key"
               value={key}
               onChange={(e) => setKey(e.target.value)}
               rows={3}
