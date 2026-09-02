@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { getJson, deleteJson, errorMessage, isArray } from "../lib/http";
 interface User {
   id: number;
   username: string;
@@ -6,6 +7,12 @@ interface User {
   createdAt: string;
   sessionCount: number;
   storeRecords: number;
+}
+
+/** The server stores UTC text timestamps; render them in the viewer's zone. */
+function formatDate(value: string): string {
+  const d = new Date(value.replace(" ", "T") + "Z");
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
 }
 
 export function UsersPage() {
@@ -19,15 +26,10 @@ export function UsersPage() {
     // try/finally: a rejected fetch previously skipped setLoading(false) and
     // left the page spinning, with an unhandled rejection.
     try {
-      const res = await fetch("/api/users");
-      if (!res.ok) {
-        setError("Failed to load users");
-        return;
-      }
-      setUsers(await res.json());
+      setUsers(await getJson<User[]>("/api/users", { expect: isArray }));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load users");
+      setError(errorMessage(err, "Failed to load users"));
     } finally {
       setLoading(false);
     }
@@ -43,14 +45,10 @@ export function UsersPage() {
     setDeleting(userId);
     setConfirmDelete(null);
     try {
-      const r = await fetch(`/api/users/${userId}`, { method: "DELETE" });
-      if (r.ok) {
-        setUsers((prev) => prev.filter((u) => u.id !== userId));
-      } else {
-        setError("Failed to delete user");
-      }
+      await deleteJson(`/api/users/${userId}`);
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete user");
+      setError(errorMessage(err, "Failed to delete user"));
     } finally {
       // In finally: a rejected DELETE previously left the row disabled until
       // a page reload.
@@ -97,11 +95,13 @@ export function UsersPage() {
                   <td className="px-4 py-3 text-right text-brand font-medium">
                     {user.storeRecords.toLocaleString()}
                   </td>
-                  <td className="px-4 py-3 text-ink-subtle text-xs">{String(user.createdAt)}</td>
+                  <td className="px-4 py-3 text-ink-subtle text-xs">{formatDate(String(user.createdAt))}</td>
                   <td className="px-4 py-3 text-right">
                     {confirmDelete === user.id ? (
                       <div className="flex items-center gap-2 justify-end">
-                        <span className="text-xs text-warn">Confirm?</span>
+                        <span className="text-xs text-warn">
+                          Delete user, their sessions and records?
+                        </span>
                         <button
                           onClick={() => handleDelete(user.id)}
                           disabled={deleting === user.id}

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Search, ChevronLeft, ChevronRight, Terminal, Trash2, X, AlertTriangle } from "lucide-react";
 import { useToastStore } from "../stores/toast-store";
+import { getJson, postJson, errorMessage, isAbort, isArray, hasNumber } from "../lib/http";
 
 interface HistoryRow {
   id: string;
@@ -45,13 +46,15 @@ export function HistoryPage() {
   // Selection names commands; this is how many *entries* those commands cover,
   // which is the number that matters before an irreversible delete.
   const [batchPreview, setBatchPreview] = useState<{ total: number } | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const push = useToastStore((s) => s.push);
   const limit = 50;
 
   useEffect(() => {
-    fetch("/api/history/hosts")
-      .then((r) => r.json())
+    getJson<Array<{ hostname: string; count: number }>>("/api/history/hosts", {
+      expect: isArray,
+    })
       .then(setHosts)
       .catch(() => setHosts([]));
   }, []);
@@ -67,22 +70,23 @@ export function HistoryPage() {
     // after a later one and overwrite current results with stale rows.
     const controller = new AbortController();
     const t = setTimeout(() => {
-      fetch(`/api/history?${params}`, { signal: controller.signal })
-        .then((r) => {
-          // fetch() resolves for 4xx/5xx, so an error body would reach setData
-          // and the next render would throw on data.rows.map.
-          if (!r.ok) throw new Error(`Request failed (${r.status})`);
-          return r.json();
+      getJson<HistoryPageData>(`/api/history?${params}`, {
+        signal: controller.signal,
+        expect: (v) => isArray((v as HistoryPageData)?.rows),
+      })
+        .then((d) => {
+          setData(d);
+          setLoadError(null);
         })
-        .then(setData)
         .catch((err) => {
-          if (err instanceof Error && err.name === "AbortError") return;
+          if (isAbort(err)) return;
+          setLoadError(errorMessage(err, "Failed to load history"));
           // Cleared, not retained: keeping the previous page's rows under the
           // new filters would show a selection that does not match what the
           // filters describe — and selection drives deletion.
           setData(null);
           setSelected(new Set());
-          push("error", err instanceof Error ? err.message : "Failed to load history.");
+          push("error", errorMessage(err, "Failed to load history."));
         })
         .finally(() => {
           if (!controller.signal.aborted) setLoading(false);
@@ -106,6 +110,7 @@ export function HistoryPage() {
 
   const pageCommands = [...new Set(data?.rows.map((r) => r.command) ?? [])];
   const allSelected = pageCommands.length > 0 && pageCommands.every((c) => selected.has(c));
+  const someSelected = pageCommands.some((c) => selected.has(c));
 
   function toggleAll() {
     setSelected((prev) => {
@@ -120,16 +125,11 @@ export function HistoryPage() {
   async function previewBatch() {
     setBusy(true);
     try {
-      const res = await fetch("/api/history/preview-batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ commands: [...selected] }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || typeof body.total !== "number") {
-        push("error", body.message ?? `Preview failed (${res.status}).`);
-        return;
-      }
+      const body = await postJson<{ total: number }>(
+        "/api/history/preview-batch",
+        { commands: [...selected] },
+        { expect: hasNumber("total") }
+      );
       setBatchPreview({ total: body.total });
       setConfirming(true);
     } catch (err) {
@@ -142,19 +142,12 @@ export function HistoryPage() {
   async function deleteSelected() {
     setBusy(true);
     try {
-      const res = await fetch("/api/history/delete-batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ commands: [...selected] }),
-      });
-      const body = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        // A non-2xx previously fell through to the success branch and cleared
-        // the selection, so a failed deletion looked like a completed one.
-        push("error", body.message ?? `Delete failed (${res.status}).`);
-        return;
-      }
+      const body = await postJson<{
+        deleted: number;
+        removedRows?: number;
+        total: number;
+        refused?: unknown[];
+      }>("/api/history/delete-batch", { commands: [...selected] });
 
       if (body.refused?.length) {
         push(
@@ -171,7 +164,9 @@ export function HistoryPage() {
       setBatchPreview(null);
       setReloadKey((k) => k + 1);
     } catch (err) {
-      push("error", err instanceof Error ? err.message : "Delete failed.");
+      // Covers transport failure and non-2xx alike: a deletion that did not
+      // happen must never clear the selection as though it had.
+      push("error", errorMessage(err, "Delete failed."));
     } finally {
       setBusy(false);
     }
@@ -293,6 +288,11 @@ export function HistoryPage() {
                 <input
                   type="checkbox"
                   checked={allSelected}
+                  // Partial selections read as "none selected" without this,
+                  // which misrepresents what a delete would cover.
+                  ref={(el) => {
+                    if (el) el.indeterminate = someSelected && !allSelected;
+                  }}
                   onChange={toggleAll}
                   aria-label="Select all on this page"
                   className="accent-current cursor-pointer"
@@ -314,7 +314,14 @@ export function HistoryPage() {
                 </td>
               </tr>
             )}
-            {!loading && data?.rows.length === 0 && (
+            {!loading && loadError && (
+              <tr>
+                <td colSpan={7} className="px-4 py-8 text-center text-danger">
+                  {loadError}
+                </td>
+              </tr>
+            )}
+            {!loading && !loadError && data?.rows.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-ink-subtle">
                   No matching commands.

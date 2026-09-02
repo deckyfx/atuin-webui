@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { getJson, errorMessage, isArray } from "../lib/http";
 
 interface ActivityDay {
   date: string;
@@ -11,16 +12,10 @@ export function ActivityPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/stats/activity")
-      .then((r) => r.json())
-      .then((data) => {
-        setActivity(data as ActivityDay[]);
-        setLoading(false);
-      })
-      .catch(() => {
-        setError("Failed to load activity");
-        setLoading(false);
-      });
+    getJson<ActivityDay[]>("/api/stats/activity", { expect: isArray })
+      .then(setActivity)
+      .catch((err) => setError(errorMessage(err, "Failed to load activity")))
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="text-ink-subtle text-sm p-8">Loading…</div>;
@@ -89,7 +84,7 @@ export function ActivityPage() {
                       {day.count.toLocaleString()}
                     </td>
                     <td className="px-4 py-3 text-right text-ink-subtle">
-                      {((day.count / total) * 100).toFixed(1)}%
+                      {total > 0 ? ((day.count / total) * 100).toFixed(1) : "0.0"}%
                     </td>
                   </tr>
                 ))}

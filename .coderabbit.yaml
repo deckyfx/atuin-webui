@@ -15,7 +15,8 @@ reviews:
 
   path_filters:
     # Generated or vendored: reviewing these produces noise, not findings.
-    - "!bun.lock"
+    # bun.lock is deliberately NOT filtered — a dependency change is exactly
+    # the kind of thing a reviewer should see.
     - "!dist/**"
     - "!binaries/**"
     - "!data/**"

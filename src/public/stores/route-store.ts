@@ -36,6 +36,15 @@ interface RouteState {
 
 const DEFAULT: Route = { section: "overview", rest: [] };
 
+/** decodeURIComponent throws on a malformed escape; a bad URL is not a crash. */
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 /**
  * Parses `#history/list` into a route.
  *
@@ -50,11 +59,13 @@ export function parseHash(hash: string): Route {
   const [head, ...rest] = raw.split("/").filter(Boolean);
   const section = SECTIONS.find((s) => s === head);
   if (!section) return DEFAULT;
-  return { section, rest };
+  return { section, rest: rest.map((r) => safeDecode(r)) };
 }
 
 export function toHash(section: Section, rest: string[] = []): string {
-  return `#${[section, ...rest].join("/")}`;
+  // Encoded per segment: an unescaped "?" or "#" in a sub-route truncates the
+  // fragment, and the app then reads a route it never wrote.
+  return `#${[section, ...rest.map(encodeURIComponent)].join("/")}`;
 }
 
 export const useRouteStore = create<RouteState>((set) => ({

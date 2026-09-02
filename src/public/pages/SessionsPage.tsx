@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { getJson, deleteJson, errorMessage, isArray } from "../lib/http";
 
 interface Session {
   id: number;
@@ -15,20 +16,16 @@ export function SessionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<number | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<number | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   async function load() {
     // try/finally: a rejected fetch previously skipped setLoading(false) and
     // left the page on its spinner forever, with an unhandled rejection.
     try {
-      const res = await fetch("/api/sessions");
-      if (!res.ok) {
-        setError("Failed to load sessions");
-        return;
-      }
-      setSessions(await res.json());
+      setSessions(await getJson<Session[]>("/api/sessions", { expect: isArray }));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load sessions");
+      setError(errorMessage(err, "Failed to load sessions"));
     } finally {
       setLoading(false);
     }
@@ -43,15 +40,14 @@ export function SessionsPage() {
     }
     setRevoking(sessionId);
     setConfirmRevoke(null);
+    setRevokeError(null);
     try {
-      const r = await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
-      if (r.ok) {
-        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-      } else {
-        setError("Failed to revoke session");
-      }
+      await deleteJson(`/api/sessions/${sessionId}`);
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to revoke session");
+      // Recorded per row, not as a page-level error: a failed revoke used to
+      // replace the whole table with an error screen.
+      setRevokeError(errorMessage(err, "Failed to revoke session"));
     } finally {
       // In finally: a rejected DELETE previously left the row disabled until
       // a page reload.
@@ -66,6 +62,11 @@ export function SessionsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-ink">Sessions</h1>
+        {revokeError && (
+          <p role="alert" className="text-danger text-sm mt-2 mb-1">
+            {revokeError}
+          </p>
+        )}
         <p className="text-ink-subtle text-sm mt-1">
           {sessions.length} active session{sessions.length !== 1 ? "s" : ""}
         </p>

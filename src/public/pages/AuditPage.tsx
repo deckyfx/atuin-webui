@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ScrollText, CheckCircle2, XCircle, HelpCircle } from "lucide-react";
 import { Card, Skeleton } from "../components/Card";
+import { getJson, errorMessage, isArray } from "../lib/http";
 
 interface AuditRow {
   id: number;
@@ -26,15 +27,11 @@ export function AuditPage() {
   const [open, setOpen] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch("/api/audit")
-      .then((r) => {
-        if (!r.ok) throw new Error(`Request failed (${r.status})`);
-        return r.json();
-      })
+    // Distinguished from an empty log: presenting a failed fetch as "no
+    // destructive actions recorded" is the opposite of what happened.
+    getJson<AuditRow[]>("/api/audit", { expect: isArray })
       .then(setRows)
-      // Distinguished from an empty log: presenting a failed fetch as "no
-      // destructive actions recorded" is the opposite of what happened.
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load."));
+      .catch((err) => setError(errorMessage(err, "Failed to load.")));
   }, []);
 
   return (
@@ -67,12 +64,20 @@ export function AuditPage() {
 
       <div className="space-y-2">
         {rows?.map((row) => {
-          const sample: string[] = row.sample ? JSON.parse(row.sample) : [];
+          // Guarded: one malformed row would otherwise throw during render
+          // and blank the entire log.
+          let sample: string[] = [];
+          try {
+            if (row.sample) sample = JSON.parse(row.sample) as string[];
+          } catch {
+            sample = [];
+          }
           const isOpen = open === row.id;
           return (
             <div key={row.id} className="rounded-xl border border-line bg-raised">
               <button
                 onClick={() => setOpen(isOpen ? null : row.id)}
+                aria-expanded={isOpen}
                 className="w-full flex items-center gap-3 px-4 py-3 text-left"
               >
                 {row.status === "succeeded" ? (

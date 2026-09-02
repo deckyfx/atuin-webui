@@ -1,8 +1,8 @@
 # Dashboard alongside a self-hosted atuin sync server.
 #
 # First boot: open the dashboard, go to Doctor, download the atuin client, then
-# log in on the setup screen. Both land in the named volumes and survive
-# restarts, so this is a one-time step.
+# log in on the setup screen. Both land in the bind mounts under ./data and
+# survive restarts, so this is a one-time step.
 services:
   atuin-dashboard:
     build: .

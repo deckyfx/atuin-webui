@@ -88,11 +88,15 @@ export class Doctor {
     let appDbOk = true;
     let appDbDetail = envConfig.APP_DB_PATH;
     try {
-      const { getAppDb } = await import("../db/app");
-      getAppDb();
+      const { AuditStore } = await import("../stores/audit-store");
+      // Probes the table the app actually needs: an openable file whose
+      // migrations never ran is not a working database.
+      await AuditStore.recent(1);
     } catch (err) {
       appDbOk = false;
-      appDbDetail = err instanceof Error ? err.message : String(err);
+      appDbDetail = `${envConfig.APP_DB_PATH} — ${
+        err instanceof Error ? err.message : String(err)
+      }`;
     }
     checks.push({
       id: "app-db",

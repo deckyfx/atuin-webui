@@ -90,14 +90,21 @@ export function ActivityChart({ data, height = 160 }: Props) {
           return (
             <g key={d.day}>
               {/* Hit target spans the full slot height, larger than the mark. */}
+              {/* Focusable and labelled: the values were reachable only by
+                  hovering, which excludes keyboard and screen-reader users. */}
               <rect
                 x={x}
                 y={0}
                 width={slot}
                 height={height}
                 fill="transparent"
+                tabIndex={0}
+                role="img"
+                aria-label={`${d.day}: ${d.count.toLocaleString()} commands`}
                 onMouseEnter={() => setHover(i)}
                 onMouseLeave={() => setHover(null)}
+                onFocus={() => setHover(i)}
+                onBlur={() => setHover(null)}
               />
               <rect
                 x={x}

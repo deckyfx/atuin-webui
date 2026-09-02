@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { LogIn, KeyRound } from "lucide-react";
+import { getJson, postJson, errorMessage } from "../lib/http";
 
 interface SetupStatus {
   profile: string;
@@ -35,11 +36,7 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
 
   const refresh = () => {
     const seq = ++requestSeq.current;
-    return fetch("/api/setup/status")
-      .then((r) => {
-        if (!r.ok) throw new Error(`Request failed (${r.status})`);
-        return r.json();
-      })
+    return getJson<SetupStatus>("/api/setup/status")
       .then((s: SetupStatus) => {
         if (seq !== requestSeq.current) return;
         setStatus(s);
@@ -49,7 +46,7 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
       // cleared it rendered a permanently blank page with no explanation.
       .catch((err) => {
         if (seq !== requestSeq.current) return;
-        setLoadError(err instanceof Error ? err.message : "Request failed");
+        setLoadError(errorMessage(err));
       });
   };
 
@@ -62,23 +59,14 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/setup/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, key }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.message ?? `Login failed (${res.status}).`);
-        return;
-      }
+      await postJson("/api/setup/login", { username, password, key });
       // Drop the secrets from component state immediately on success.
       setPassword("");
       setKey("");
       await refresh();
     } catch (err) {
-      // A rejected fetch (server down mid-setup) previously surfaced nothing.
-      setError(err instanceof Error ? err.message : "Login request failed.");
+      // Covers transport failure and a non-2xx alike.
+      setError(errorMessage(err, "Login request failed."));
     } finally {
       setBusy(false);
     }
@@ -196,7 +184,10 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
         </div>
 
         {error && (
-          <p className="mt-4 text-danger text-sm bg-danger-soft border border-danger/30 rounded-lg px-4 py-2">
+          <p
+            role="alert"
+            className="mt-4 text-danger text-sm bg-danger-soft border border-danger/30 rounded-lg px-4 py-2"
+          >
             {error}
           </p>
         )}

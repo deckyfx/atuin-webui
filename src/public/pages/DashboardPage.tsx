@@ -5,6 +5,8 @@ import { Card, Skeleton } from "../components/Card";
 import { ActivityChart } from "../components/ActivityChart";
 import { BarList } from "../components/BarList";
 import { seriesColor } from "../components/viz";
+import { getJson, errorMessage, isArray } from "../lib/http";
+import { NOISE_VERBS } from "../lib/noise";
 
 interface ClientOverview {
   profile: string;
@@ -31,8 +33,8 @@ interface DayCount {
   count: number;
 }
 
-/** Commands that are almost always navigation rather than work. */
-const NOISE = new Set(["cd", "ls", "ll", "cat", "clear", "pwd", "exit"]);
+/** Shared with the Prune page so the stat and the shortcut cannot disagree. */
+const NOISE = new Set<string>(NOISE_VERBS);
 
 export function DashboardPage() {
   const [overview, setOverview] = useState<ClientOverview | null>(null);
@@ -46,10 +48,10 @@ export function DashboardPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/client/overview").then((r) => r.json()),
-      fetch("/api/history/verbs").then((r) => r.json()),
-      fetch("/api/history/hosts").then((r) => r.json()),
-      fetch("/api/history/activity").then((r) => r.json()),
+      getJson<ClientOverview>("/api/client/overview"),
+      getJson<VerbCount[]>("/api/history/verbs", { expect: isArray }),
+      getJson<HostCount[]>("/api/history/hosts", { expect: isArray }),
+      getJson<DayCount[]>("/api/history/activity", { expect: isArray }),
     ])
       .then(([o, v, h, a]) => {
         setOverview(o);
@@ -57,7 +59,7 @@ export function DashboardPage() {
         setHosts(h);
         setActivity(a);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .catch((e) => setError(errorMessage(e, "Failed to load the overview")))
       .finally(() => setLoaded(true));
   }, []);
 
@@ -103,7 +105,7 @@ export function DashboardPage() {
         />
         <StatCard
           label="Machines"
-          value={overview ? overview.totalHosts : "—"}
+          value={overview ? overview.totalHosts.toLocaleString() : "—"}
           icon={Server}
         />
         <StatCard

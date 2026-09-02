@@ -3,6 +3,7 @@ import { RefreshCw, Sun, Moon, MonitorSmartphone, ShieldAlert, Database } from "
 import { useThemeStore } from "../stores/theme-store";
 import type { ThemePreference } from "../stores/theme-store";
 import { useToastStore } from "../stores/toast-store";
+import { getJson, postJson, errorMessage } from "../lib/http";
 
 interface SetupStatus {
   profile: string;
@@ -29,25 +30,21 @@ export function TopRibbon() {
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
-    fetch("/api/setup/status")
-      .then((r) => r.json())
+    getJson<SetupStatus>("/api/setup/status")
       .then(setStatus)
+      // Left null on failure, which the badge renders as "unknown" rather than
+      // claiming a profile it never confirmed.
       .catch(() => setStatus(null));
   }, []);
 
   async function sync() {
     setSyncing(true);
     try {
-      const res = await fetch("/api/sync", { method: "POST" });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // The server's message names the actual failure; "Sync finished" did not.
-        push("error", body.message || body.output || `Sync failed (${res.status}).`);
-        return;
-      }
+      const body = await postJson<{ success?: boolean; output?: string }>("/api/sync");
       push(body.success ? "success" : "error", body.output || "Sync finished.");
     } catch (err) {
-      push("error", err instanceof Error ? err.message : "Sync failed.");
+      // The server's message names the actual failure; "Sync finished" did not.
+      push("error", errorMessage(err, "Sync failed."));
     } finally {
       setSyncing(false);
     }
@@ -121,7 +118,11 @@ export function ToastStack() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm">
+    <div
+      className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm"
+      role="status"
+      aria-live="polite"
+    >
       {toasts.map((t) => (
         <button
           key={t.id}

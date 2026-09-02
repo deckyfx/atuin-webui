@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Stethoscope, CheckCircle2, AlertTriangle, XCircle, Download } from "lucide-react";
 import { Skeleton } from "../components/Card";
+import { getJson, postJson, errorMessage, isArray } from "../lib/http";
 import { useToastStore } from "../stores/toast-store";
 
 type CheckStatus = "ok" | "warn" | "fail";
@@ -35,13 +36,16 @@ const ICON: Record<CheckStatus, { Icon: typeof CheckCircle2; cls: string }> = {
 export function DoctorPage() {
   const [report, setReport] = useState<DoctorReport | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const push = useToastStore((s) => s.push);
 
   const load = useCallback(() => {
-    fetch("/api/doctor")
-      .then((r) => r.json())
+    setError(null);
+    getJson<DoctorReport>("/api/doctor", { expect: (v) => isArray((v as DoctorReport)?.checks) })
       .then(setReport)
-      .catch(() => setReport(null));
+      // Distinguished from "still checking": a null report renders an
+      // indefinite skeleton, which looks identical to a hung request.
+      .catch((err) => setError(errorMessage(err, "Could not run the checks")));
   }, []);
 
   useEffect(load, [load]);
@@ -49,19 +53,11 @@ export function DoctorPage() {
   async function installAtuin() {
     setInstalling(true);
     try {
-      const res = await fetch("/api/doctor/install-atuin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const body = await res.json();
-      push(
-        body.success ? "success" : "error",
-        body.success ? `Installed atuin ${body.version}` : body.message
-      );
+      const body = await postJson<{ version: string }>("/api/doctor/install-atuin", {});
+      push("success", `Installed atuin ${body.version}`);
       load();
     } catch (err) {
-      push("error", err instanceof Error ? err.message : "Install failed.");
+      push("error", errorMessage(err, "Install failed."));
     } finally {
       setInstalling(false);
     }
@@ -83,11 +79,19 @@ export function DoctorPage() {
         </p>
       </header>
 
-      {!report && <Skeleton height={220} />}
+      {error && (
+        <p className="text-danger text-sm bg-danger-soft border border-danger/30 rounded-lg px-4 py-3">
+          {error}
+        </p>
+      )}
+
+      {!report && !error && <Skeleton height={220} />}
 
       <div className="space-y-2">
         {report?.checks.map((check) => {
-          const { Icon, cls } = ICON[check.status];
+          // Fallback: an unknown status from a newer server would otherwise
+          // destructure undefined and blank the page.
+          const { Icon, cls } = ICON[check.status] ?? ICON.warn;
           return (
             <div
               key={check.id}

@@ -1,9 +1,18 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Search, Trash2, X, CopyMinus, RefreshCw, Scissors, AlertTriangle, Sparkles, Check } from "lucide-react";
+import { NOISE_VERBS } from "../lib/noise";
+import { getJson, postJson, errorMessage, hasNumber, isArray } from "../lib/http";
 
 interface VerbCount {
   verb: string;
   count: number;
+}
+
+interface DedupPreview {
+  removable: number;
+  groups: number;
+  fingerprint: string;
+  sample: Array<{ command: string; copies: number }>;
 }
 
 interface PreviewResult {
@@ -39,23 +48,16 @@ export function PrunePage() {
   const [verbPreview, setVerbPreview] = useState<{ total: number; unique: number; bare: number } | null>(null);
   const [verbConfirming, setVerbConfirming] = useState(false);
   const [dedupConfirming, setDedupConfirming] = useState(false);
-  const [dedupPreview, setDedupPreview] = useState<{
-    removable: number;
-    groups: number;
-    fingerprint: string;
-    sample: Array<{ command: string; copies: number }>;
-  } | null>(null);
+  const [dedupPreview, setDedupPreview] = useState<DedupPreview | null>(null);
 
-  /** Commands that are navigation rather than work. */
-  const NOISE = ["cd", "ls", "ll", "cat", "clear", "pwd", "exit"];
+
 
   /** Refetched after every mutation: the counts these chips show are exactly
    *  what the delete just changed, so a stale list invites deleting nothing. */
   const loadVerbs = useCallback(() => {
-    fetch("/api/history/verbs")
-      .then((r) => r.json())
+    getJson<VerbCount[]>("/api/history/verbs", { expect: isArray })
       .then(setVerbs)
-      .catch(() => setVerbs([]));
+      .catch((err) => setResult(`Could not load commands: ${errorMessage(err)}`));
   }, []);
 
   useEffect(loadVerbs, [loadVerbs]);
@@ -72,21 +74,9 @@ export function PrunePage() {
   async function runDedup(expectedFingerprint: string) {
     setBusy(true);
     try {
-      const res = await fetch("/api/dedup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expectedFingerprint }),
+      const body = await postJson<{ output?: string }>("/api/dedup", {
+        expectedFingerprint,
       });
-      const body = await res.json();
-      if (res.status === 409) {
-        setDedupPreview(body.preview ?? null);
-        setResult(body.message);
-        return;
-      }
-      if (!res.ok) {
-        setResult(`Dedup failed: ${body.message ?? `HTTP ${res.status}`}`);
-        return;
-      }
       setResult(body.output || "Duplicates removed.");
       setDedupConfirming(false);
       setDedupPreview(null);
@@ -102,16 +92,14 @@ export function PrunePage() {
     setBusy(true);
     setResult(null);
     try {
-      const res = await fetch("/api/dedup/preview");
-      const body = await res.json();
-      if (!res.ok || typeof body.removable !== "number") {
-        setResult(`Preview failed: ${body.message ?? `HTTP ${res.status}`}`);
-        return;
-      }
-      setDedupPreview(body);
+      setDedupPreview(
+        await getJson<DedupPreview>("/api/dedup/preview", {
+          expect: hasNumber("removable"),
+        })
+      );
       setDedupConfirming(true);
     } catch (err) {
-      setResult(`Preview failed: ${err instanceof Error ? err.message : "request failed"}`);
+      setResult(`Preview failed: ${errorMessage(err)}`);
     } finally {
       setBusy(false);
     }
@@ -121,18 +109,16 @@ export function PrunePage() {
     setBusy(true);
     setResult(null);
     try {
-      const res = await fetch("/api/prune/preview-verbs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ verbs: [...picked] }),
-      });
-      const body = await res.json();
-      if (!res.ok || typeof body.total !== "number") {
-        setResult(`Preview failed: ${body.message ?? "unexpected response"}`);
-        setVerbPreview(null);
-        return;
-      }
-      setVerbPreview(body);
+      setVerbPreview(
+        await postJson<{ total: number; unique: number; bare: number }>(
+          "/api/prune/preview-verbs",
+          { verbs: [...picked] },
+          { expect: hasNumber("total") }
+        )
+      );
+    } catch (err) {
+      setResult(`Preview failed: ${errorMessage(err)}`);
+      setVerbPreview(null);
     } finally {
       setBusy(false);
     }
@@ -141,18 +127,10 @@ export function PrunePage() {
   async function purgeVerbs() {
     setBusy(true);
     try {
-      const res = await fetch("/api/prune/execute-verbs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ verbs: [...picked] }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // Previously any response was reported as a purge, so a 4xx/5xx read
-        // as "done" while nothing had been deleted.
-        setResult(`Purge failed: ${body.message ?? `HTTP ${res.status}`}`);
-        return;
-      }
+      const body = await postJson<{
+        removed: number;
+        results?: Array<{ ok: boolean }>;
+      }>("/api/prune/execute-verbs", { verbs: [...picked] });
       const failed = (body.results ?? []).filter((r: { ok: boolean }) => !r.ok);
       setResult(
         failed.length
@@ -164,7 +142,9 @@ export function PrunePage() {
       setVerbConfirming(false);
       loadVerbs();
     } catch (err) {
-      setResult(`Purge failed: ${err instanceof Error ? err.message : "request failed"}`);
+      // Covers both a rejected request and a non-2xx: a purge that did not
+      // happen must never read as one that did.
+      setResult(`Purge failed: ${errorMessage(err)}`);
     } finally {
       setBusy(false);
     }
@@ -176,12 +156,14 @@ export function PrunePage() {
     setResult(null);
     setConfirming(false);
     try {
-      const res = await fetch("/api/prune/preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(rule()),
-      });
-      setPreview(await res.json());
+      setPreview(
+        await postJson<PreviewResult>("/api/prune/preview", rule(), {
+          expect: hasNumber("total"),
+        })
+      );
+    } catch (err) {
+      setResult(`Preview failed: ${errorMessage(err)}`);
+      setPreview(null);
     } finally {
       setBusy(false);
     }
@@ -190,19 +172,14 @@ export function PrunePage() {
   async function runDelete() {
     setBusy(true);
     try {
-      const res = await fetch("/api/prune/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(rule()),
-      });
-      const body = await res.json();
-      setResult(res.ok ? `Deleted. ${body.output ?? ""}` : `Failed: ${body.message}`);
+      const body = await postJson<{ output?: string }>("/api/prune/execute", rule());
+      setResult(`Deleted. ${body.output ?? ""}`.trim());
       setPreview(null);
       setConfirming(false);
-      if (res.ok) {
-        loadVerbs();
-        setQuery("");
-      }
+      loadVerbs();
+      setQuery("");
+    } catch (err) {
+      setResult(`Failed: ${errorMessage(err)}`);
     } finally {
       setBusy(false);
     }
@@ -211,10 +188,11 @@ export function PrunePage() {
   async function post(path: string) {
     setBusy(true);
     try {
-      const res = await fetch(path, { method: "POST" });
-      const body = await res.json();
+      const body = await postJson<{ output?: string; success?: boolean }>(path);
       setResult(body.output || (body.success ? "Done." : "Failed."));
       loadVerbs();
+    } catch (err) {
+      setResult(errorMessage(err, "Request failed."));
     } finally {
       setBusy(false);
     }
@@ -235,7 +213,7 @@ export function PrunePage() {
           <p className="text-xs uppercase tracking-wider text-ink-subtle">Noisiest commands</p>
           <button
             onClick={() => {
-              const available = verbs.filter((v) => NOISE.includes(v.verb)).map((v) => v.verb);
+              const available = verbs.filter((v) => NOISE_VERBS.includes(v.verb)).map((v) => v.verb);
               setPicked(new Set(available));
               setVerbPreview(null);
               setVerbConfirming(false);

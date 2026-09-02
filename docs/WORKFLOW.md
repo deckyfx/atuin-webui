@@ -104,8 +104,9 @@ codebase where a plausible-looking change is wrong:
 | `src/public/**` | semantic colour tokens only; destructive actions need preview and confirm |
 | `Dockerfile` | client binary is fetched at runtime; a bind-mount must be the musl build |
 
-Generated files (`bun.lock`, `dist/`, `binaries/`, `data/`, the embedded
-migration manifest) are filtered out — reviewing them produces noise rather
+Generated files (`dist/`, `binaries/`, `data/`, the embedded migration
+manifest) are filtered out; `bun.lock` deliberately is not, because a
+dependency change is exactly what a reviewer should see — reviewing them produces noise rather
 than findings.
 
 Validate changes to that file with `coderabbit config validate`.
