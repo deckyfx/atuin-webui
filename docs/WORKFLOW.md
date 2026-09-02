@@ -23,6 +23,27 @@ request that sees the change as a whole.
       merge
 ```
 
+## Setup
+
+```bash
+curl -fsSL https://cli.coderabbit.ai/install.sh | sh   # CLI
+coderabbit auth login                                  # once
+coderabbit doctor                                      # verify
+```
+
+In Claude Code, install the official plugin rather than the standalone skills —
+it is versioned and updates with `claude plugin update coderabbit`:
+
+```
+/plugin install coderabbit
+```
+
+It provides `autofix`, `code-review`, `coderabbit-review` and a `code-reviewer`
+agent. If `coderabbit skills` was run previously, the same skill names also
+exist under `~/.claude/skills` as symlinks into `~/.agents/skills`; remove those
+two symlinks so the plugin's copies are unambiguous. Leave `~/.agents/skills`
+itself alone — Codex, Gemini CLI and Copilot read from there.
+
 ## 1. Local loop
 
 ```bash
@@ -31,7 +52,17 @@ bun run review:agent    # structured findings, for an agent to act on
 ```
 
 Run it before every push. It reviews *tracked changes*, so stage or commit
-first — an unstaged file is invisible to it.
+first — an unstaged file is invisible to it. Add `--base main` to review the
+whole branch rather than the last commit, and `--include-untracked` to cover
+files not yet added.
+
+A full-branch review takes minutes. Run it detached and watch the log rather
+than blocking on it:
+
+```bash
+coderabbit review --base main --committed > /tmp/cr-review.log 2>&1 &
+tail -f /tmp/cr-review.log
+```
 
 Fix, re-run, repeat until clean. Nothing here touches the remote.
 
