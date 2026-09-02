@@ -222,7 +222,15 @@ export class HistoryStore {
         count: count(),
       })
       .from(clientHistory)
-      .where(and(this.liveOnly(), sql`${clientHistory.timestamp} >= ${cutoff}`))
+      // Upper-bounded too: a future-dated row (clock skew on another machine)
+      // otherwise lands inside a window the UI labels "last 30 days".
+      .where(
+        and(
+          this.liveOnly(),
+          sql`${clientHistory.timestamp} >= ${cutoff}`,
+          sql`${clientHistory.timestamp} <= ${Date.now() * 1_000_000}`
+        )
+      )
       .groupBy(sql`1`)
       .orderBy(sql`1`);
   }

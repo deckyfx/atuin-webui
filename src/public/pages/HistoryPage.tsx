@@ -46,6 +46,9 @@ export function HistoryPage() {
   // Selection names commands; this is how many *entries* those commands cover,
   // which is the number that matters before an irreversible delete.
   const [batchPreview, setBatchPreview] = useState<{ total: number } | null>(null);
+  // The commands the preview covered. Deleting `selected` instead would remove
+  // rows ticked after the count was shown.
+  const [previewedCommands, setPreviewedCommands] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const push = useToastStore((s) => s.push);
@@ -125,11 +128,13 @@ export function HistoryPage() {
   async function previewBatch() {
     setBusy(true);
     try {
+      const taken = [...selected];
       const body = await postJson<{ total: number }>(
         "/api/history/preview-batch",
-        { commands: [...selected] },
+        { commands: taken },
         { expect: hasNumber("total") }
       );
+      setPreviewedCommands(taken);
       setBatchPreview({ total: body.total });
       setConfirming(true);
     } catch (err) {
@@ -147,7 +152,7 @@ export function HistoryPage() {
         removedRows?: number;
         total: number;
         refused?: unknown[];
-      }>("/api/history/delete-batch", { commands: [...selected] });
+      }>("/api/history/delete-batch", { commands: previewedCommands });
 
       if (body.refused?.length) {
         push(
@@ -162,6 +167,7 @@ export function HistoryPage() {
       setSelected(new Set());
       setConfirming(false);
       setBatchPreview(null);
+      setPreviewedCommands([]);
       setReloadKey((k) => k + 1);
     } catch (err) {
       // Covers transport failure and non-2xx alike: a deletion that did not

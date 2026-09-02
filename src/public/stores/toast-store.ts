@@ -28,8 +28,12 @@ export const useToastStore = create<ToastState>((set) => ({
       // A failing action retried in a loop would otherwise stack one toast per
       // attempt until they covered the screen. Repeats of the same message
       // refresh the existing entry, and the list is capped.
+      // A repeat moves the existing entry to the end rather than adding
+      // another, so the newest occurrence is the one in view.
       const existing = s.toasts.find((t) => t.kind === kind && t.message === message);
-      if (existing) return { toasts: s.toasts };
+      if (existing) {
+        return { toasts: [...s.toasts.filter((t) => t.id !== existing.id), existing] };
+      }
       return { toasts: [...s.toasts, { id, kind, message }].slice(-MAX_TOASTS) };
     });
     // Errors stay until dismissed; transient results clear themselves.

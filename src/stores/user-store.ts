@@ -56,6 +56,28 @@ export class UserStore {
   }
 
   /**
+   * What {@link delete} would remove for a user.
+   *
+   * The cascade is not visible from the row: deleting an account also drops
+   * its sessions and every synced record, which can be tens of thousands.
+   */
+  static async deletePreview(
+    userId: number
+  ): Promise<{ sessions: number; records: number } | null> {
+    const [user] = await getServerDb()
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, userId));
+    if (!user) return null;
+
+    const [sessionRes, storeRes] = await Promise.all([
+      getServerDb().select({ count: count() }).from(sessions).where(eq(sessions.userId, userId)),
+      getServerDb().select({ count: count() }).from(store).where(eq(store.userId, userId)),
+    ]);
+    return { sessions: sessionRes[0]?.count ?? 0, records: storeRes[0]?.count ?? 0 };
+  }
+
+  /**
    * Deletes a user and everything belonging to them.
    *
    * Wrapped in a transaction: as three independent statements, a failure

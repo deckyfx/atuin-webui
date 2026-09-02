@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { redactCommand } from "../audit-store";
+import { redactCommand, redactValues } from "../audit-store";
 
 /**
  * The audit log is durable, so anything these miss is a secret this project
@@ -64,9 +64,25 @@ describe("redactCommand", () => {
 });
 
 describe("redaction covers every persisted audit field", () => {
-  test("a rule containing a secret is redacted", () => {
-    const rule = JSON.stringify({ query: "--password hunter2", searchMode: "prefix" });
-    expect(redactCommand(rule)).not.toContain("hunter2");
+  test("a rule object is redacted through the real serialisation path", () => {
+    // Exercises redactValues + JSON.stringify as the store does, rather than
+    // running the patterns over already-serialised text — the two differ, and
+    // the serialised form is where escaping can defeat a match.
+    const stored = JSON.stringify(
+      redactValues({ query: "--password hunter2", searchMode: "prefix", limit: 10 })
+    );
+    expect(stored).not.toContain("hunter2");
+    expect(stored).toContain("prefix");
+    expect(stored).toContain("10");
+  });
+
+  test("nested and array values are redacted too", () => {
+    const stored = JSON.stringify(
+      redactValues({ verbs: ["ls", "--token abc123def456"], nested: { k: "-pSecret" } })
+    );
+    expect(stored).not.toContain("abc123def456");
+    expect(stored).not.toContain("Secret");
+    expect(stored).toContain("ls");
   });
 
   test("CLI output echoing a command is redacted", () => {

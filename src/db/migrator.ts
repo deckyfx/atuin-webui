@@ -1,5 +1,5 @@
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
-import { mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { getAppDb } from "./app";
@@ -58,18 +58,30 @@ export class Migrator {
    * not expose. A lock left behind by a killed process is reclaimed once it is
    * older than the timeout, so a crash cannot wedge every future start.
    */
-  private static async withLock<T>(fn: () => T): Promise<T> {
+  private static async withLock<T>(fn: () => Promise<T> | T): Promise<T> {
+    // The lock now precedes materialise(), which used to create this
+    // directory: without it the exclusive create fails with ENOENT forever.
+    mkdirSync(envConfig.RUNTIME_CONFIG_DIR, { recursive: true });
+
     const lockPath = join(envConfig.RUNTIME_CONFIG_DIR, ".migrate.lock");
-    const STALE_MS = 60_000;
-    const deadline = Date.now() + STALE_MS;
+    const WAIT_MS = 120_000;
+    const deadline = Date.now() + WAIT_MS;
 
     for (;;) {
       try {
         writeFileSync(lockPath, String(process.pid), { flag: "wx" });
         break;
       } catch {
-        const age = Date.now() - (statSync(lockPath, { throwIfNoEntry: false })?.mtimeMs ?? 0);
-        if (age > STALE_MS) {
+        // Reclaimed on the holder being gone, not on the file being old: a
+        // migration slower than any fixed age would otherwise have its lock
+        // stolen while it was still running, which is exactly the case the
+        // lock exists to prevent.
+        if (!existsSync(lockPath)) {
+          // The create failed for a reason other than contention (a bad path,
+          // no permission). Spinning would hang the process forever.
+          throw new Error(`Cannot create the migration lock at ${lockPath}.`);
+        }
+        if (!this.holderAlive(lockPath)) {
           rmSync(lockPath, { force: true });
           continue;
         }
@@ -83,9 +95,30 @@ export class Migrator {
     }
 
     try {
-      return fn();
+      return await fn();
     } finally {
       rmSync(lockPath, { force: true });
+    }
+  }
+
+  /** Whether the process named in the lock file still exists. */
+  private static holderAlive(lockPath: string): boolean {
+    let pid: number;
+    try {
+      pid = Number.parseInt(readFileSync(lockPath, "utf8").trim(), 10);
+    } catch {
+      // Gone between the failed create and this read.
+      return false;
+    }
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    if (pid === process.pid) return true;
+    try {
+      // Signal 0 tests for existence without delivering anything.
+      process.kill(pid, 0);
+      return true;
+    } catch (err) {
+      // EPERM means it exists and belongs to another user.
+      return (err as NodeJS.ErrnoException)?.code === "EPERM";
     }
   }
 
@@ -98,16 +131,12 @@ export class Migrator {
       process.exit(1);
     }
 
-    await this.materialise();
-
-    // Serialised across processes. Two instances starting together (a restart
-    // overlapping the old one, or compose scaling to two replicas) would
-    // otherwise materialise into the same directory and migrate the same
-    // database concurrently.
-    //
-    // SQLite's own write lock makes the migration itself atomic; this exists
-    // so the loser waits and then observes an already-migrated database rather
-    // than racing the file writes in materialise().
-    await this.withLock(() => migrate(getAppDb(), { migrationsFolder: this.dir }));
+    // The lock covers materialise() as well as the migration itself: writing
+    // the .sql files is the part that races. Two instances materialising into
+    // one directory can leave a half-written file for the other to run.
+    await this.withLock(async () => {
+      await this.materialise();
+      migrate(getAppDb(), { migrationsFolder: this.dir });
+    });
   }
 }

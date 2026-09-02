@@ -232,7 +232,14 @@ export class AtuinCli {
    * being the same query.
    */
   static async deleteMatching(rule: SearchRule): Promise<CommandResult> {
-    return this.run(this.searchArgs(rule, ["--delete", "--include-duplicates"]));
+    const res = await this.run(this.searchArgs(rule, ["--delete", "--include-duplicates"]));
+    // Same convention as the preview: exit 1 with no output means the query
+    // matched nothing. A delete that removed nothing because there was nothing
+    // to remove is a success, not a failure to report to the user.
+    if (!res.ok && !res.stderr.trim() && res.stdout.length === 0) {
+      return { ...res, ok: true };
+    }
+    return res;
   }
 
   /**

@@ -33,9 +33,12 @@ export function ActivityChart({ data, height = 160 }: Props) {
   }
 
   const max = Math.max(...data.map((d) => d.count), 1);
-  const gap = 2; // surface gap between adjacent bars
+  // Expressed in the same units as `slot` (viewBox percent), so the constant
+  // and the arithmetic agree. It previously read "2" while a quarter of it was
+  // applied, which made the stated gap and the drawn gap different things.
+  const GAP = 0.5;
   const slot = 100 / data.length;
-  const barW = Math.max(slot - (gap / 4), 0.5);
+  const barW = Math.max(slot - GAP, 0.5);
   const active = hover === null ? null : data[hover];
 
   // Gridlines sit at these fractions of the plot area; label them so the

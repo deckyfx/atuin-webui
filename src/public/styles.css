@@ -100,69 +100,83 @@
 
 /* "Auto": no data-theme attribute, so the OS decides. The :not() guard keeps
    an explicit light choice winning over OS dark. */
+/*
+ * The dark palette, defined once.
+ *
+ * It previously appeared twice — under the media query and under the theme
+ * attribute — and the two drifted: a set of chart colours was added to one
+ * block and not the other, so explicit dark mode rendered bars with an
+ * undefined fill. The values live here; the two scopes only reference them.
+ */
+:root {
+  --dark-c-surface: #030712;
+  --dark-c-raised: #0b1220;
+  --dark-c-overlay: #111827;
+  --dark-c-hover: #1f2937;
+  --dark-c-line: #1f2937;
+  --dark-c-line-strong: #374151;
+  --dark-c-ink: #f1f5f9;
+  --dark-c-ink-muted: #94a3b8;
+  --dark-c-ink-subtle: #64748b;
+  --dark-c-brand: #34d399;
+  --dark-c-brand-soft: #064e3b;
+  --dark-c-danger: #f87171;
+  --dark-c-danger-soft: #450a0a;
+  --dark-c-warn: #fbbf24;
+  --dark-c-warn-soft: #451a03;
+  --dark-c-grid: #1f2937;
+  --dark-c-series-1: #3987e5;
+  --dark-c-series-2: #d95926;
+  --dark-c-series-3: #199e70;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-
-    --c-surface: #030712;
-    --c-raised: #0b1220;
-    --c-overlay: #111827;
-    --c-hover: #1f2937;
-
-    --c-line: #1f2937;
-    --c-line-strong: #374151;
-
-    --c-ink: #f1f5f9;
-    --c-ink-muted: #94a3b8;
-    --c-ink-subtle: #64748b;
-
-    --c-brand: #34d399;
-    --c-brand-soft: #064e3b;
-    --c-danger: #f87171;
-    --c-danger-soft: #450a0a;
-    --c-warn: #fbbf24;
-    --c-warn-soft: #451a03;
-
-    --c-grid: #1f2937;
-
-    /* Same three hues re-stepped for the dark surface (#111827) and validated
-       as a set: CVD dE 9.4, normal-vision dE 20.9, all >= 3:1. */
-    --c-series-1: #3987e5;
-    --c-series-2: #d95926;
-    --c-series-3: #199e70;
+    --c-surface: var(--dark-c-surface);
+    --c-raised: var(--dark-c-raised);
+    --c-overlay: var(--dark-c-overlay);
+    --c-hover: var(--dark-c-hover);
+    --c-line: var(--dark-c-line);
+    --c-line-strong: var(--dark-c-line-strong);
+    --c-ink: var(--dark-c-ink);
+    --c-ink-muted: var(--dark-c-ink-muted);
+    --c-ink-subtle: var(--dark-c-ink-subtle);
+    --c-brand: var(--dark-c-brand);
+    --c-brand-soft: var(--dark-c-brand-soft);
+    --c-danger: var(--dark-c-danger);
+    --c-danger-soft: var(--dark-c-danger-soft);
+    --c-warn: var(--dark-c-warn);
+    --c-warn-soft: var(--dark-c-warn-soft);
+    --c-grid: var(--dark-c-grid);
+    --c-series-1: var(--dark-c-series-1);
+    --c-series-2: var(--dark-c-series-2);
+    --c-series-3: var(--dark-c-series-3);
   }
 }
 
 /* Explicit dark choice wins in both directions. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-
-  --c-surface: #030712;
-  --c-raised: #0b1220;
-  --c-overlay: #111827;
-  --c-hover: #1f2937;
-
-  --c-line: #1f2937;
-  --c-line-strong: #374151;
-
-  --c-ink: #f1f5f9;
-  --c-ink-muted: #94a3b8;
-  --c-ink-subtle: #64748b;
-
-  --c-brand: #34d399;
-  --c-brand-soft: #064e3b;
-  --c-danger: #f87171;
-  --c-danger-soft: #450a0a;
-  --c-warn: #fbbf24;
-  --c-warn-soft: #451a03;
-
-  --c-grid: #1f2937;
-
-  /* Same three hues re-stepped for the dark surface (#111827) and validated
-     as a set: CVD dE 9.4, normal-vision dE 20.9, all >= 3:1. */
-  --c-series-1: #3987e5;
-  --c-series-2: #d95926;
-  --c-series-3: #199e70;
+  --c-surface: var(--dark-c-surface);
+  --c-raised: var(--dark-c-raised);
+  --c-overlay: var(--dark-c-overlay);
+  --c-hover: var(--dark-c-hover);
+  --c-line: var(--dark-c-line);
+  --c-line-strong: var(--dark-c-line-strong);
+  --c-ink: var(--dark-c-ink);
+  --c-ink-muted: var(--dark-c-ink-muted);
+  --c-ink-subtle: var(--dark-c-ink-subtle);
+  --c-brand: var(--dark-c-brand);
+  --c-brand-soft: var(--dark-c-brand-soft);
+  --c-danger: var(--dark-c-danger);
+  --c-danger-soft: var(--dark-c-danger-soft);
+  --c-warn: var(--dark-c-warn);
+  --c-warn-soft: var(--dark-c-warn-soft);
+  --c-grid: var(--dark-c-grid);
+  --c-series-1: var(--dark-c-series-1);
+  --c-series-2: var(--dark-c-series-2);
+  --c-series-3: var(--dark-c-series-3);
 }
 
 @layer base {

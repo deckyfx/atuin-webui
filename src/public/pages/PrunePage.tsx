@@ -25,6 +25,14 @@ interface PreviewResult {
 
 type SearchMode = "prefix" | "full-text" | "fuzzy";
 
+/** The shape sent to the prune endpoints. */
+interface SearchRule {
+  query: string;
+  searchMode: SearchMode;
+  filterMode: "global";
+  before?: string;
+}
+
 /**
  * Batch pruning.
  *
@@ -39,6 +47,11 @@ export function PrunePage() {
   const [searchMode, setSearchMode] = useState<SearchMode>("prefix");
   const [before, setBefore] = useState("");
   const [preview, setPreview] = useState<PreviewResult | null>(null);
+  // The rule and verb set the preview was taken with. The confirm deletes
+  // these, not whatever the inputs hold when it is clicked: editing the query
+  // after previewing would otherwise delete something never shown.
+  const [previewedRule, setPreviewedRule] = useState<SearchRule | null>(null);
+  const [previewedVerbs, setPreviewedVerbs] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -109,13 +122,15 @@ export function PrunePage() {
     setBusy(true);
     setResult(null);
     try {
+      const taken = [...picked];
       setVerbPreview(
         await postJson<{ total: number; unique: number; bare: number }>(
           "/api/prune/preview-verbs",
-          { verbs: [...picked] },
+          { verbs: taken },
           { expect: hasNumber("total") }
         )
       );
+      setPreviewedVerbs(taken);
     } catch (err) {
       setResult(`Preview failed: ${errorMessage(err)}`);
       setVerbPreview(null);
@@ -127,10 +142,11 @@ export function PrunePage() {
   async function purgeVerbs() {
     setBusy(true);
     try {
+      if (previewedVerbs.length === 0) return;
       const body = await postJson<{
         removed: number;
         results?: Array<{ ok: boolean }>;
-      }>("/api/prune/execute-verbs", { verbs: [...picked] });
+      }>("/api/prune/execute-verbs", { verbs: previewedVerbs });
       const failed = (body.results ?? []).filter((r: { ok: boolean }) => !r.ok);
       setResult(
         failed.length
@@ -139,6 +155,7 @@ export function PrunePage() {
       );
       setPicked(new Set());
       setVerbPreview(null);
+      setPreviewedVerbs([]);
       setVerbConfirming(false);
       loadVerbs();
     } catch (err) {
@@ -156,11 +173,13 @@ export function PrunePage() {
     setResult(null);
     setConfirming(false);
     try {
+      const taken = rule();
       setPreview(
-        await postJson<PreviewResult>("/api/prune/preview", rule(), {
+        await postJson<PreviewResult>("/api/prune/preview", taken, {
           expect: hasNumber("total"),
         })
       );
+      setPreviewedRule(taken);
     } catch (err) {
       setResult(`Preview failed: ${errorMessage(err)}`);
       setPreview(null);
@@ -172,9 +191,11 @@ export function PrunePage() {
   async function runDelete() {
     setBusy(true);
     try {
-      const body = await postJson<{ output?: string }>("/api/prune/execute", rule());
+      if (!previewedRule) return;
+      const body = await postJson<{ output?: string }>("/api/prune/execute", previewedRule);
       setResult(`Deleted. ${body.output ?? ""}`.trim());
       setPreview(null);
+      setPreviewedRule(null);
       setConfirming(false);
       loadVerbs();
       setQuery("");

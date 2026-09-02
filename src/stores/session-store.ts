@@ -14,7 +14,6 @@ export interface SessionWithUser {
    */
   tokenFingerprint: string;
   username: string | null;
-  email: string | null;
 }
 
 export class SessionStore {
@@ -27,8 +26,10 @@ export class SessionStore {
         // Redacted in SQL rather than after the fact, so the full token is
         // never materialised into a response object at all.
         tokenFingerprint: sql<string>`substr(${sessions.token}, 1, 6) || '…' || substr(${sessions.token}, -4)`,
+        // Email is deliberately absent: the username identifies the session
+        // for this view, and an unauthenticated endpoint should return the
+        // least that answers the question.
         username: users.username,
-        email: users.email,
       })
       .from(sessions)
       .leftJoin(users, eq(sessions.userId, users.id))

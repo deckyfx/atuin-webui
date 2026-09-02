@@ -68,7 +68,11 @@ export function TopRibbon() {
             ? "Checking which client profile is active…"
             : live
               ? "Deletions reach every synced machine"
-              : "Disposable sandbox client — safe to experiment"
+              : status?.profile === "sandbox"
+                ? "Disposable sandbox client — safe to experiment"
+                : // Neither profile: say what it is rather than promising
+                  // safety for a client this UI knows nothing about.
+                  `Profile "${status?.profile}" — deletions affect whichever client this is`
         }
       >
         {known && live ? <ShieldAlert size={13} /> : <Database size={13} />}

@@ -25,7 +25,7 @@ const VALUE = String.raw`(?:'[^']*'|"[^"]*"|(?:\\.|\S)+)`;
 
 const REDACTIONS: Array<[RegExp, string]> = [
   // --password=… / --token … / -p …
-  [new RegExp(String.raw`(-{1,2}(?:password|passwd|pwd|token|secret|api[-_]?key)[=\s])${VALUE}`, "gi"),
+  [new RegExp(String.raw`(-{1,2}(?:password|passwd|pwd|token|secret|api[-_]?key|auth|credential|private[-_]?key|access[-_]?key|bearer|passphrase)[=\s])${VALUE}`, "gi"),
     "$1«redacted»"],
   // FOO_TOKEN=… in an assignment or export
   [new RegExp(String.raw`\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_?KEY)[A-Z0-9_]*=)${VALUE}`, "g"),
@@ -47,7 +47,7 @@ export function redactCommand(command: string): string {
 }
 
 /** Recursively redacts every string in a JSON-serialisable value. */
-function redactValues(value: unknown): unknown {
+export function redactValues(value: unknown): unknown {
   if (typeof value === "string") return redactCommand(value);
   if (Array.isArray(value)) return value.map(redactValues);
   if (value && typeof value === "object") {

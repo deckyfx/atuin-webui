@@ -184,7 +184,9 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       const res = await AtuinCli.deleteExact(body.command);
       await AuditStore.complete(auditId, {
         succeeded: res.ok,
-        matchedCount: res.refused ? 0 : matched,
+        // Zero on any failure, not only a refusal: a delete that errored
+        // removed nothing, and recording the previewed count would overstate it.
+        matchedCount: res.ok ? matched : 0,
         output: (res.stdout || res.stderr).trim(),
       });
 
@@ -481,6 +483,18 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
   .get("/stats/hosts", async () => await StatsStore.getHostStats())
   .get("/stats/activity", async () => await StatsStore.getActivity())
   .get("/users", async () => await UserStore.findAll())
+  .get(
+    "/users/:id/delete-preview",
+    async ({ params, set }) => {
+      const preview = await UserStore.deletePreview(params.id);
+      if (!preview) {
+        set.status = 404;
+        return { message: "User not found" };
+      }
+      return preview;
+    },
+    { params: t.Object({ id: t.Numeric() }) }
+  )
   .delete(
     "/users/:id",
     async ({ params, set }) => {

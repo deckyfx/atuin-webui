@@ -47,7 +47,6 @@ export function BarList({ items, unit, onSelect }: Props) {
                   // next to a dominant one (2 vs 15,000).
                   width: `${item.value > 0 ? Math.max(pct, 1.5) : 0}%`,
                   backgroundColor: item.color ?? ACCENT,
-                  opacity: onSelect ? undefined : 1,
                 }}
               />
             </span>

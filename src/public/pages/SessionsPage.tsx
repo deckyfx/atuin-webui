@@ -7,7 +7,6 @@ interface Session {
   /** Already redacted server-side; the full token never leaves the server. */
   tokenFingerprint: string;
   username: string | null;
-  email: string | null;
 }
 
 export function SessionsPage() {
@@ -93,10 +92,7 @@ export function SessionsPage() {
                 >
                   <td className="px-4 py-3 text-ink-subtle text-xs">{session.id}</td>
                   <td className="px-4 py-3">
-                    <div>
-                      <p className="text-ink font-medium">{session.username ?? "—"}</p>
-                      <p className="text-ink-subtle text-xs">{session.email ?? "unknown"}</p>
-                    </div>
+                    <p className="text-ink font-medium">{session.username ?? "—"}</p>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-ink-muted">
                     {session.tokenFingerprint}
