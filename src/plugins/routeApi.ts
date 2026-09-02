@@ -158,11 +158,19 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       // Counted before the delete: `matchedCount` records how many entries
       // went, and 1 was the number of *commands* asked for, not the number of
       // rows removed.
-      let matched = 0;
+      // No preview, no delete: proceeding would remove history whose scope was
+      // never established, irreversibly and on every synced machine. Checked
+      // before the audit row is opened so a refusal leaves no dangling entry.
+      let matched: number;
       try {
         matched = (await AtuinCli.previewExact(body.command)).total;
-      } catch {
-        // Non-fatal; the audit entry simply will not know the count.
+      } catch (err) {
+        set.status = 503;
+        return {
+          message: `Refusing to delete: could not preview the scope first. ${
+            err instanceof Error ? err.message : ""
+          }`.trim(),
+        };
       }
 
       const auditId = await AuditStore.begin({
@@ -408,7 +416,10 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       // arriving, and dedup run against a newer database would delete entries
       // that were never previewed.
       const current = await HistoryStore.duplicatePreview(0);
-      if (body.expectedRemovable !== current.removable) {
+      // Compared by fingerprint, not by count: a different duplicate set can
+      // have the same removable total, and the count alone would wave through
+      // a deletion of entries the user never previewed.
+      if (body.expectedFingerprint !== current.fingerprint) {
         set.status = 409;
         return {
           message:
@@ -429,7 +440,7 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       });
       return { success: res.ok, output: (res.stdout || res.stderr).trim() };
     },
-    { body: t.Object({ expectedRemovable: t.Integer({ minimum: 0 }) }) }
+    { body: t.Object({ expectedFingerprint: t.String({ minLength: 1 }) }) }
   )
   .get("/audit", async () => await AuditStore.recent(100))
   .post("/sync", async () => {

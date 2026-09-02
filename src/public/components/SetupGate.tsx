@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { LogIn, KeyRound } from "lucide-react";
 
 interface SetupStatus {
@@ -29,20 +29,30 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Retry can start concurrent requests; only the newest may write state, or a
+  // slow earlier failure lands after a fast success and hides a working page.
+  const requestSeq = useRef(0);
 
-  const refresh = () =>
+  const refresh = () => {
+    const seq = ++requestSeq.current;
+    return
     fetch("/api/setup/status")
       .then((r) => {
         if (!r.ok) throw new Error(`Request failed (${r.status})`);
         return r.json();
       })
       .then((s: SetupStatus) => {
+        if (seq !== requestSeq.current) return;
         setStatus(s);
         setLoadError(null);
       })
       // `status === null` also means "still loading", so a failure that only
       // cleared it rendered a permanently blank page with no explanation.
-      .catch((err) => setLoadError(err instanceof Error ? err.message : "Request failed"));
+      .catch((err) => {
+        if (seq !== requestSeq.current) return;
+        setLoadError(err instanceof Error ? err.message : "Request failed");
+      });
+  };
 
   useEffect(() => {
     refresh();

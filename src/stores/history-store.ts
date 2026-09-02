@@ -146,6 +146,8 @@ export class HistoryStore {
   static async duplicatePreview(sampleSize = 20): Promise<{
     removable: number;
     groups: number;
+    /** Identifies *which* duplicates these are, not merely how many. */
+    fingerprint: string;
     sample: Array<{ command: string; copies: number }>;
   }> {
     const db = getHistoryDb();
@@ -177,9 +179,36 @@ export class HistoryStore {
           .as("dupes")
       );
 
+    // A hash over the whole duplicate set: two different sets can share a
+    // removable count, so the count alone cannot confirm the user is deleting
+    // what they were shown.
+    const [digest] = await db
+      .select({
+        value: sql<string>`group_concat(k, char(31))`,
+      })
+      .from(
+        db
+          .select({
+            k: sql<string>`${clientHistory.command} || char(30) || ${clientHistory.cwd} || char(30) || ${clientHistory.hostname} || char(30) || count(*)`.as(
+              "k"
+            ),
+          })
+          .from(clientHistory)
+          .where(this.liveOnly())
+          .groupBy(clientHistory.command, clientHistory.cwd, clientHistory.hostname)
+          .having(sql`count(*) > 1`)
+          .orderBy(clientHistory.command, clientHistory.cwd, clientHistory.hostname)
+          .as("keys")
+      );
+
+    const fingerprint = new Bun.CryptoHasher("sha256")
+      .update(digest?.value ?? "")
+      .digest("hex");
+
     return {
       removable: agg?.removable ?? 0,
       groups: agg?.groups ?? 0,
+      fingerprint,
       sample: grouped,
     };
   }

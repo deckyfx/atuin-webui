@@ -42,6 +42,7 @@ export function PrunePage() {
   const [dedupPreview, setDedupPreview] = useState<{
     removable: number;
     groups: number;
+    fingerprint: string;
     sample: Array<{ command: string; copies: number }>;
   } | null>(null);
 
@@ -66,15 +67,15 @@ export function PrunePage() {
     ...(before ? { before } : {}),
   });
 
-  /** Sends the count the user actually confirmed, so a changed scope is
-   *  rejected rather than silently deleting a different set. */
-  async function runDedup(expectedRemovable: number) {
+  /** Sends the fingerprint of the scope the user actually saw, so a changed
+   *  duplicate set is rejected rather than silently deleted. */
+  async function runDedup(expectedFingerprint: string) {
     setBusy(true);
     try {
       const res = await fetch("/api/dedup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expectedRemovable }),
+        body: JSON.stringify({ expectedFingerprint }),
       });
       const body = await res.json();
       if (res.status === 409) {
@@ -489,7 +490,7 @@ export function PrunePage() {
             // so it shows its scope first and confirms second, rather than
             // firing on a single click.
             if (dedupConfirming && dedupPreview) {
-              void runDedup(dedupPreview.removable);
+              void runDedup(dedupPreview.fingerprint);
             } else {
               void previewDedup();
             }

@@ -74,6 +74,11 @@ export function HistoryPage() {
         .then(setData)
         .catch((err) => {
           if (err instanceof Error && err.name === "AbortError") return;
+          // Cleared, not retained: keeping the previous page's rows under the
+          // new filters would show a selection that does not match what the
+          // filters describe — and selection drives deletion.
+          setData(null);
+          setSelected(new Set());
           push("error", err instanceof Error ? err.message : "Failed to load history.");
         })
         .finally(() => {
