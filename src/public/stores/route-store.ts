@@ -1,17 +1,7 @@
 import { create } from "zustand";
 
 /** Top-level sections. The hash owns client navigation; the path stays server-side. */
-export type Section =
-  | "overview"
-  | "history"
-  | "prune"
-  | "audit"
-  | "doctor"
-  | "users"
-  | "sessions"
-  | "activity";
-
-const SECTIONS: Section[] = [
+const SECTIONS = [
   "overview",
   "history",
   "prune",
@@ -20,7 +10,11 @@ const SECTIONS: Section[] = [
   "users",
   "sessions",
   "activity",
-];
+] as const;
+
+/** Derived from SECTIONS so a section added to one cannot be missing from the
+ *  other — the runtime list is what parseHash validates against. */
+export type Section = (typeof SECTIONS)[number];
 
 export interface Route {
   section: Section;

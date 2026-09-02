@@ -101,3 +101,8 @@ test("does not fire on -p inside a word", () => {
   const cmd = "./scripts/dump-pending.sh";
   expect(redactCommand(cmd)).toBe(cmd);
 });
+
+test("redacts lowercase inline assignments", () => {
+  expect(redactCommand("curl 'https://x?token=abc123secret'")).not.toContain("abc123secret");
+  expect(redactCommand("api_key=lowercase_secret ./run")).not.toContain("lowercase_secret");
+});

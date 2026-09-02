@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { getJson, deleteJson, errorMessage, isArray } from "../lib/http";
+import { getJson, deleteJson, errorMessage, isArray, hasNumber } from "../lib/http";
 interface User {
   id: number;
   username: string;
@@ -51,11 +51,15 @@ export function UsersPage() {
       try {
         setDeletePreview(
           await getJson<{ sessions: number; records: number }>(
-            `/api/users/${userId}/delete-preview`
+            `/api/users/${userId}/delete-preview`,
+            { expect: hasNumber("records") }
           )
         );
       } catch (err) {
+        // Close the confirm row rather than leaving it open with a disabled
+        // button and no explanation of why it will never enable.
         setDeleteError(errorMessage(err, "Could not read what this would delete"));
+        setConfirmDelete(null);
       }
       return;
     }

@@ -12,6 +12,7 @@ import { UsersPage } from "./pages/UsersPage";
 import { SessionsPage } from "./pages/SessionsPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { useRouteStore } from "./stores/route-store";
+import type { Section } from "./stores/route-store";
 import { useThemeStore } from "./stores/theme-store";
 
 function App() {
@@ -24,7 +25,9 @@ function App() {
   useEffect(() => initRoute(), [initRoute]);
   useEffect(() => initTheme(), [initTheme]);
 
-  const content = {
+  // A total map over Section: adding a section to the route store without a
+  // page here is a compile error rather than a blank screen at runtime.
+  const pages: Record<Section, React.ReactNode> = {
     overview: <DashboardPage />,
     history: <HistoryPage />,
     prune: <PrunePage />,
@@ -33,7 +36,8 @@ function App() {
     users: <UsersPage />,
     sessions: <SessionsPage />,
     activity: <ActivityPage />,
-  }[section];
+  };
+  const content = pages[section];
 
   return (
     <SetupGate>

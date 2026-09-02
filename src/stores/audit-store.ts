@@ -28,7 +28,9 @@ const REDACTIONS: Array<[RegExp, string]> = [
   [new RegExp(String.raw`(-{1,2}(?:password|passwd|pwd|token|secret|api[-_]?key|auth|credential|private[-_]?key|access[-_]?key|bearer|passphrase)[=\s])${VALUE}`, "gi"),
     "$1«redacted»"],
   // FOO_TOKEN=… in an assignment or export
-  [new RegExp(String.raw`\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_?KEY)[A-Z0-9_]*=)${VALUE}`, "g"),
+  // Case-insensitive: `token=abc` in a URL or a lowercase shell variable is
+  // just as much a secret as GITHUB_TOKEN=abc.
+  [new RegExp(String.raw`\b([A-Za-z0-9_]*(?:token|secret|password|passwd|api_?key|auth|bearer)[A-Za-z0-9_]*=)${VALUE}`, "gi"),
     "$1«redacted»"],
   // Authorization: Bearer …  (often inside a quoted header argument)
   [new RegExp(String.raw`(Authorization:\s*(?:Bearer|Basic)\s+)[^"']+`, "gi"),

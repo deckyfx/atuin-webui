@@ -151,8 +151,12 @@ export async function installAtuin(
   }
 
   onProgress({ step: "extracting" });
-  const workDir = join(envConfig.RUNTIME_CONFIG_DIR, ".atuin-download");
-  await rm(workDir, { recursive: true, force: true });
+  // Unique per install: two concurrent requests sharing one directory would
+  // have the first's rm delete the second's partly-extracted files.
+  const workDir = join(
+    envConfig.RUNTIME_CONFIG_DIR,
+    `.atuin-download-${process.pid}-${Date.now().toString(36)}`
+  );
   await mkdir(workDir, { recursive: true });
 
   const tarPath = join(workDir, asset);

@@ -5,7 +5,7 @@ import { Card, Skeleton } from "../components/Card";
 import { ActivityChart } from "../components/ActivityChart";
 import { BarList } from "../components/BarList";
 import { seriesColor } from "../components/viz";
-import { getJson, errorMessage, isArray } from "../lib/http";
+import { getJson, errorMessage, isArray, hasNumber } from "../lib/http";
 import { NOISE_VERBS } from "../lib/noise";
 
 interface ClientOverview {
@@ -48,7 +48,9 @@ export function DashboardPage() {
 
   useEffect(() => {
     Promise.all([
-      getJson<ClientOverview>("/api/client/overview"),
+      getJson<ClientOverview>("/api/client/overview", {
+        expect: hasNumber("totalCommands"),
+      }),
       getJson<VerbCount[]>("/api/history/verbs", { expect: isArray }),
       getJson<HostCount[]>("/api/history/hosts", { expect: isArray }),
       getJson<DayCount[]>("/api/history/activity", { expect: isArray }),

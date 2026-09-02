@@ -21,6 +21,12 @@ interface AuditRow {
  * Deletions propagate to every synced machine and cannot be undone here, so
  * this is the only surviving trace of what a prune removed.
  */
+/** Rows are stored UTC; show them where the reader is. */
+function formatDate(value: string): string {
+  const d = new Date(value.replace(" ", "T") + "Z");
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+}
+
 export function AuditPage() {
   const [rows, setRows] = useState<AuditRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +104,7 @@ export function AuditPage() {
                     {row.matchedCount.toLocaleString()} matched
                   </span>
                 )}
-                <span className="text-xs text-ink-subtle">{row.createdAt}</span>
+                <span className="text-xs text-ink-subtle">{formatDate(row.createdAt)}</span>
               </button>
 
               {isOpen && (

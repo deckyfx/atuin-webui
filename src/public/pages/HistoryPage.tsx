@@ -168,6 +168,10 @@ export function HistoryPage() {
       setConfirming(false);
       setBatchPreview(null);
       setPreviewedCommands([]);
+      // Back to the first page: deleting can shrink the result set past the
+      // current offset, which would otherwise render an empty table that looks
+      // like "no matching commands".
+      setOffset(0);
       setReloadKey((k) => k + 1);
     } catch (err) {
       // Covers transport failure and non-2xx alike: a deletion that did not

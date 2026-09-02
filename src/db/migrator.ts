@@ -82,7 +82,11 @@ export class Migrator {
           throw new Error(`Cannot create the migration lock at ${lockPath}.`);
         }
         if (!this.holderAlive(lockPath)) {
-          rmSync(lockPath, { force: true });
+          // Re-read the pid and only remove the file we judged dead. Between
+          // the liveness check and the unlink another process can acquire the
+          // lock, and deleting theirs would let two migrators run at once —
+          // the precise failure this lock prevents.
+          this.reclaimIfStillDead(lockPath);
           continue;
         }
         if (Date.now() > deadline) {
@@ -98,6 +102,29 @@ export class Migrator {
       return await fn();
     } finally {
       rmSync(lockPath, { force: true });
+    }
+  }
+
+  /**
+   * Removes the lock only if it still names the dead pid we saw.
+   *
+   * A blind unlink would delete a lock acquired in the meantime by a live
+   * process, which is how a mutex turns into two concurrent writers.
+   */
+  private static reclaimIfStillDead(lockPath: string): void {
+    let pid: string;
+    try {
+      pid = readFileSync(lockPath, "utf8").trim();
+    } catch {
+      return; // Already gone.
+    }
+    if (this.holderAlive(lockPath)) return;
+    try {
+      // Re-read once more: the content must be unchanged from what we judged.
+      if (readFileSync(lockPath, "utf8").trim() !== pid) return;
+      rmSync(lockPath, { force: true });
+    } catch {
+      // Someone else removed it first; the next create attempt will settle it.
     }
   }
 

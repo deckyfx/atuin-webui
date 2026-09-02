@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Search, Trash2, X, CopyMinus, RefreshCw, Scissors, AlertTriangle, Sparkles, Check } from "lucide-react";
 import { NOISE_VERBS } from "../lib/noise";
-import { getJson, postJson, errorMessage, hasNumber, isArray } from "../lib/http";
+import { getJson, postJson, errorMessage, hasNumber, isArray, HttpError } from "../lib/http";
 
 interface VerbCount {
   verb: string;
@@ -95,7 +95,24 @@ export function PrunePage() {
       setDedupPreview(null);
       loadVerbs();
     } catch (err) {
-      setResult(`Dedup failed: ${err instanceof Error ? err.message : "request failed"}`);
+      // 409 is a normal outcome, not a failure: history moved between the
+      // preview and the confirm, and the response carries the new scope. The
+      // stale preview must be replaced, never left on screen next to a
+      // confirm button.
+      if (err instanceof HttpError && err.status === 409) {
+        const fresh = (err.body as { preview?: DedupPreview })?.preview ?? null;
+        setDedupPreview(fresh);
+        setDedupConfirming(false);
+        setResult(
+          fresh
+            ? `${err.message} Showing the updated scope — review and confirm again.`
+            : err.message
+        );
+        return;
+      }
+      setDedupPreview(null);
+      setDedupConfirming(false);
+      setResult(`Dedup failed: ${errorMessage(err)}`);
     } finally {
       setBusy(false);
     }

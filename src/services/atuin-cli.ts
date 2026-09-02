@@ -197,9 +197,11 @@ export class AtuinCli {
    */
   private static assertSearchOk(res: CommandResult): void {
     if (res.ok) return;
-    const stderr = res.stderr.trim();
-    if (!stderr && res.stdout.length === 0) return; // no matches
-    throw new Error(stderr || `atuin search failed (exit ${res.exitCode})`);
+    // Exit 1 specifically: that is the "matched nothing" code. Treating any
+    // non-zero exit as an empty result would silently swallow a killed process
+    // (SIGKILL, 137) or a missing binary (127) as "this rule is safe".
+    if (res.exitCode === 1 && !res.stderr.trim() && res.stdout.length === 0) return;
+    throw new Error(res.stderr.trim() || `atuin search failed (exit ${res.exitCode})`);
   }
 
   /**
@@ -236,7 +238,7 @@ export class AtuinCli {
     // Same convention as the preview: exit 1 with no output means the query
     // matched nothing. A delete that removed nothing because there was nothing
     // to remove is a success, not a failure to report to the user.
-    if (!res.ok && !res.stderr.trim() && res.stdout.length === 0) {
+    if (res.exitCode === 1 && !res.stderr.trim() && res.stdout.length === 0) {
       return { ...res, ok: true };
     }
     return res;

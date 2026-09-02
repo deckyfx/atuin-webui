@@ -355,6 +355,9 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       const res = await AtuinCli.deleteMatching(rule);
       await AuditStore.complete(auditId, {
         succeeded: res.ok,
+        // Zero on failure: the row opened with the previewed count, and a
+        // delete that errored removed nothing.
+        matchedCount: res.ok ? matched.total : 0,
         output: (res.stdout || res.stderr).trim(),
       });
 
