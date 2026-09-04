@@ -51,6 +51,7 @@ COPY --from=builder /build/binaries/atuin-dashboard-linux-* /usr/local/bin/atuin
 # host's loopback only -- exposing it beyond that needs auth in front.
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
+    ALLOW_PUBLIC_BIND=1 \
     PORT=3001 \
     ATUIN_PROFILE=live \
     ATUIN_CLIENT_DATA_DIR=/data/atuin \

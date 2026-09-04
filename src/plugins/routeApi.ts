@@ -231,7 +231,7 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
   )
   .post(
     "/history/delete-batch",
-    async ({ body }) => {
+    async ({ body, set }) => {
       // Sequential rather than parallel: each delete appends to the record
       // store, and concurrent writers would contend on the same sqlite file.
       const auditId = await AuditStore.begin({
@@ -290,12 +290,19 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
           .join("\n"),
       });
 
-      return {
+      const payload = {
         deleted,
         removedRows,
         refused: results.filter((r) => !r.ok),
         total: body.commands.length,
       };
+      if (deleted === 0 && results.length > 0) {
+        // Nothing was deleted and every command was refused: a 2xx here reads
+        // as "done" to anything checking the status line, which is how /dedup
+        // already behaves.
+        set.status = 500;
+      }
+      return payload;
     },
     {
       body: t.Object({

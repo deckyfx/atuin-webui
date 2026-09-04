@@ -109,7 +109,12 @@ export function SessionsPage() {
                           Yes, revoke
                         </button>
                         <button
-                          onClick={() => setConfirmRevoke(null)}
+                          onClick={() => {
+                            setConfirmRevoke(null);
+                            // The error described the attempt being cancelled;
+                            // leaving it up attaches it to the next one.
+                            setRevokeError(null);
+                          }}
                           className="text-xs px-2 py-1 rounded bg-hover text-ink-muted hover:bg-hover transition-colors"
                         >
                           Cancel

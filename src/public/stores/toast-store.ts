@@ -46,7 +46,18 @@ export const useToastStore = create<ToastState>((set) => ({
         if (pending !== undefined) clearTimeout(pending);
         return { toasts: [...s.toasts.filter((t) => t.id !== existing.id), existing] };
       }
-      return { toasts: [...s.toasts, { id, kind, message }].slice(-MAX_TOASTS) };
+      const next = [...s.toasts, { id, kind, message }];
+      // Anything pushed out by the cap keeps a pending timer that would later
+      // fire against an id no longer on screen — and ids are reused by the
+      // refresh path above, so a stale timer can dismiss a live toast.
+      for (const dropped of next.slice(0, Math.max(0, next.length - MAX_TOASTS))) {
+        const pending = timers.get(dropped.id);
+        if (pending !== undefined) {
+          clearTimeout(pending);
+          timers.delete(dropped.id);
+        }
+      }
+      return { toasts: next.slice(-MAX_TOASTS) };
     });
     // Errors stay until dismissed; transient results clear themselves.
     if (kind !== "error") {

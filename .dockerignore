@@ -2,6 +2,10 @@ node_modules
 dist
 binaries
 sandbox
+# Runtime state: the client's databases and, in data/client/atuin/key, the
+# encryption key for every synced record. `COPY . .` would put them in the
+# image, which is published far more widely than this working tree.
+data
 .git
 .env
 .env.*

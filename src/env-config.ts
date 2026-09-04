@@ -200,6 +200,12 @@ class EnvConfig {
     return Bun.env.HOST ?? "127.0.0.1";
   }
 
+  /** Explicit confirmation required before binding beyond loopback. */
+  get ALLOW_PUBLIC_BIND(): boolean {
+    const raw = Bun.env.ALLOW_PUBLIC_BIND;
+    return raw === "1" || raw?.toLowerCase() === "true";
+  }
+
   get PORT(): number {
     const raw = Bun.env.PORT;
     // `undefined`, not falsy: PORT="" is a configured value and a mistake,

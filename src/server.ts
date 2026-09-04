@@ -21,6 +21,20 @@ try {
 
 export { migrationError };
 
+// A non-loopback bind is a decision, not a default. Every endpoint is
+// unauthenticated: the API deletes history on every synced machine, accepts an
+// account key, writes an executable to disk and returns command text that
+// routinely contains tokens. A warning is easy to miss in a log; refusing to
+// start is not. The container sets both, because loopback inside a container
+// is unreachable from the host.
+if (envConfig.HOST !== "127.0.0.1" && envConfig.HOST !== "localhost" && !envConfig.ALLOW_PUBLIC_BIND) {
+  console.error(
+    `Refusing to listen on ${envConfig.HOST}: every endpoint is unauthenticated.\n` +
+      `Put authentication in front of it, then set ALLOW_PUBLIC_BIND=1 to confirm.`
+  );
+  process.exit(1);
+}
+
 const app = new Elysia()
   .use(apiPlugin)
   .use(appPlugin)
@@ -31,8 +45,8 @@ console.log(
 );
 if (envConfig.HOST !== "127.0.0.1" && envConfig.HOST !== "localhost") {
   console.warn(
-    `⚠️  Listening on ${envConfig.HOST}: every endpoint is unauthenticated and can ` +
-      `delete history on every synced machine. Put authentication in front of it.`
+    `⚠️  Listening on ${envConfig.HOST} with ALLOW_PUBLIC_BIND set: every endpoint ` +
+      `is unauthenticated and can delete history on every synced machine.`
   );
 }
 

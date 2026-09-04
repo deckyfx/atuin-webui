@@ -46,7 +46,10 @@ function apply(pref: ThemePreference): "light" | "dark" {
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
   preference: "auto",
-  resolved: "dark",
+  // Resolved from the OS at construction rather than assumed: a hardcoded
+  // "dark" is wrong for a light-mode viewer for the first render, which is
+  // exactly when a flash of the wrong theme is visible.
+  resolved: typeof window === "undefined" ? "light" : systemTheme(),
 
   setPreference: (pref) => {
     try {

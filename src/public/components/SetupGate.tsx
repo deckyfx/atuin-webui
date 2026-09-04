@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { LogIn, KeyRound } from "lucide-react";
+import { LogIn, KeyRound, Download } from "lucide-react";
 import { getJson, postJson, errorMessage } from "../lib/http";
 
 interface SetupStatus {
@@ -30,6 +30,8 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
   // Retry can start concurrent requests; only the newest may write state, or a
   // slow earlier failure lands after a fast success and hides a working page.
   const requestSeq = useRef(0);
@@ -72,6 +74,21 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function installAtuin() {
+    setInstalling(true);
+    setInstallError(null);
+    try {
+      await postJson("/api/doctor/install-atuin", {});
+      // Re-read rather than assume: the status endpoint is what decides
+      // whether this screen still applies.
+      await refresh();
+    } catch (err) {
+      setInstallError(errorMessage(err, "Could not install atuin"));
+    } finally {
+      setInstalling(false);
+    }
+  }
+
   if (loadError) {
     return (
       <div className="min-h-screen flex items-center justify-center p-8">
@@ -107,9 +124,24 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
             Neither is available on this host.
           </p>
           <p className="text-ink-subtle text-xs mt-4">
-            Install atuin and restart, or run the dashboard image, which bundles the
-            client.
+            The dashboard can fetch it from GitHub Releases and verify its published
+            checksum, or you can install atuin yourself and restart.
           </p>
+
+          {installError && (
+            <p className="mt-4 text-danger text-sm bg-danger-soft border border-danger/30 rounded-lg px-4 py-2">
+              {installError}
+            </p>
+          )}
+
+          <button
+            onClick={() => void installAtuin()}
+            disabled={installing}
+            className="mt-4 inline-flex items-center gap-2 rounded-lg border border-brand/40 bg-brand-soft px-4 py-2 text-sm font-medium text-brand disabled:opacity-50 hover:brightness-110"
+          >
+            <Download size={15} />
+            {installing ? "Downloading…" : "Download atuin"}
+          </button>
         </div>
       </div>
     );

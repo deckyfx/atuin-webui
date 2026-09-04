@@ -86,7 +86,9 @@ export function TopRibbon() {
         }
       >
         {known && live ? <ShieldAlert size={13} /> : <Database size={13} />}
-        {status ? status.profile : "…"}
+        {/* "…" means still loading. A failed request never resolves, so it
+            gets its own label rather than an ellipsis that waits forever. */}
+        {status ? status.profile : statusFailed ? "unavailable" : "…"}
       </div>
 
       <div className="flex-1" />

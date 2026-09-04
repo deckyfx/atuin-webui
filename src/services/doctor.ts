@@ -94,9 +94,11 @@ export class Doctor {
       await AuditStore.recent(1);
     } catch (err) {
       appDbOk = false;
-      appDbDetail = `${envConfig.APP_DB_PATH} — ${
-        err instanceof Error ? err.message : String(err)
-      }`;
+      const { Migrator } = await import("../db/migrator");
+      // The migration error, when there is one: it names the cause, where the
+      // table probe only reports the symptom ("no such table").
+      const cause = Migrator.lastError ?? (err instanceof Error ? err.message : String(err));
+      appDbDetail = `${envConfig.APP_DB_PATH} — ${cause}`;
     }
     checks.push({
       id: "app-db",

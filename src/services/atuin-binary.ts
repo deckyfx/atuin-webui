@@ -33,6 +33,40 @@ export function resolveTarget(
   return null;
 }
 
+/**
+ * Reads a response body, aborting once it exceeds `limit`.
+ *
+ * The point is to stop *before* allocating an oversized buffer, so a server
+ * that lies about content-length cannot make this process hold the whole body
+ * in memory first.
+ */
+async function readBounded(res: Response, limit: number, label: string): Promise<Uint8Array> {
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error(`No response body for ${label}.`);
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      throw new Error(`Download of ${label} exceeded the ${limit}-byte limit.`);
+    }
+    chunks.push(value);
+  }
+
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out;
+}
+
 /** Where a downloaded binary is kept: dashboard-owned and writable. */
 export function managedBinPath(): string {
   return join(envConfig.RUNTIME_CONFIG_DIR, "bin", "atuin");
@@ -173,10 +207,11 @@ async function performInstall(
       `Refusing to download ${declared} bytes for ${asset}: over the ${MAX_DOWNLOAD_BYTES}-byte limit.`
     );
   }
-  const bytes = new Uint8Array(await binRes.arrayBuffer());
-  if (bytes.byteLength > MAX_DOWNLOAD_BYTES) {
-    throw new Error(`Downloaded ${asset} exceeded the ${MAX_DOWNLOAD_BYTES}-byte limit.`);
-  }
+  // Streamed with a running total rather than buffered whole and measured
+  // afterwards: content-length is a claim the server makes, and an absent or
+  // untruthful one would let an oversized body be fully materialised before
+  // the check that rejects it.
+  const bytes = await readBounded(binRes, MAX_DOWNLOAD_BYTES, asset);
 
   onProgress({ step: "verifying", detail: "sha256" });
   const actual = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
@@ -210,8 +245,15 @@ async function performInstall(
       stdout: "pipe",
       stderr: "pipe",
     });
-    if ((await untar.exited) !== 0) {
-      throw new Error(`Extract failed: ${await new Response(untar.stderr).text()}`);
+    // Drained before awaiting exit. tar writes errors to a pipe with a finite
+    // buffer; if it fills, tar blocks on the write while we block on its exit,
+    // and neither side moves again.
+    const [untarErr, untarCode] = await Promise.all([
+      new Response(untar.stderr).text(),
+      untar.exited,
+    ]);
+    if (untarCode !== 0) {
+      throw new Error(`Extract failed: ${untarErr.trim() || `tar exited ${untarCode}`}`);
     }
 
     await mkdir(join(envConfig.RUNTIME_CONFIG_DIR, "bin"), { recursive: true });

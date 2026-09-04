@@ -161,9 +161,21 @@ export class Migrator {
     // The lock covers materialise() as well as the migration itself: writing
     // the .sql files is the part that races. Two instances materialising into
     // one directory can leave a half-written file for the other to run.
-    await this.withLock(async () => {
-      await this.materialise();
-      migrate(getAppDb(), { migrationsFolder: this.dir });
-    });
+    try {
+      await this.withLock(async () => {
+        await this.materialise();
+        migrate(getAppDb(), { migrationsFolder: this.dir });
+      });
+      this.lastError = null;
+    } catch (err) {
+      // Recorded, then rethrown: Doctor reports the migration failure itself,
+      // which names the cause. Probing a table afterwards only ever surfaces
+      // "no such table", which describes the symptom.
+      this.lastError = err instanceof Error ? err.message : String(err);
+      throw err;
+    }
   }
+
+  /** Why the last migration attempt failed, or null if it succeeded. */
+  static lastError: string | null = null;
 }

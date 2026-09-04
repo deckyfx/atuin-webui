@@ -62,6 +62,14 @@ export interface CommandResult {
  * per-record CEK wrapping and per-host `idx` sequencing -- writing rows
  * directly into history.db would neither sync nor survive a store rebuild.
  */
+/**
+ * How long any single `atuin` invocation may take.
+ *
+ * Generous: a first sync over a slow link is legitimately slow. The point is
+ * to have a ceiling at all, not to be tight.
+ */
+const COMMAND_TIMEOUT_MS = 120_000;
+
 export class AtuinCli {
   /**
    * Environment that pins the binary to the configured profile.
@@ -135,11 +143,34 @@ export class AtuinCli {
       };
     }
 
-    const [stdout, stderr] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
-    const exitCode = await proc.exited;
+    // Bounded. `atuin` can block indefinitely — a database lock held by the
+    // daemon, a sync against an unreachable server — and this runs inside an
+    // HTTP handler, so an unbounded wait ties up the request until the client
+    // gives up with no explanation.
+    const timer = setTimeout(() => proc.kill(), COMMAND_TIMEOUT_MS);
+    let stdout = "";
+    let stderr = "";
+    let exitCode: number;
+    try {
+      [stdout, stderr] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      exitCode = await proc.exited;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (proc.killed && exitCode !== 0) {
+      return {
+        ok: false,
+        stdout,
+        stderr:
+          stderr.trim() ||
+          `atuin did not finish within ${COMMAND_TIMEOUT_MS / 1000}s and was stopped.`,
+        exitCode,
+      };
+    }
 
     return { ok: exitCode === 0, stdout, stderr, exitCode };
   }
@@ -350,18 +381,22 @@ export class AtuinCli {
    * enough to pass the query check, but a "commands starting with a space"
    * rule that nobody asked for.
    */
-  private static assertVerb(verb: string): void {
-    if (!verb.trim()) {
+  private static normalisedVerb(verb: string): string {
+    const trimmed = verb.trim();
+    if (!trimmed) {
       throw new Error("Refusing to purge an empty query: it does not name a command.");
     }
+    // Returned rather than validated in place: previewVerb and deleteVerb must
+    // build the *same* query, and each trimming separately is how they drift.
+    return trimmed;
   }
 
   static async previewVerb(
     verb: string
   ): Promise<PreviewResult & { verb: string; bare: number }> {
-    this.assertVerb(verb);
+    const name = this.normalisedVerb(verb);
     const preview = await this.previewDelete({
-      query: `${verb} `,
+      query: `${name} `,
       searchMode: "prefix",
       filterMode: "global",
     });
@@ -371,19 +406,19 @@ export class AtuinCli {
     // arguments, and an unexplained gap between the two reads as a bug.
     let bare = 0;
     try {
-      bare = (await this.previewExact(verb)).total;
+      bare = (await this.previewExact(name)).total;
     } catch {
       // Non-fatal: the purge scope is unaffected, only the explanation.
     }
 
-    return { verb, bare, ...preview };
+    return { verb: name, bare, ...preview };
   }
 
   /** Deletes everything invoking `verb`. See {@link previewVerb} on scope. */
   static async deleteVerb(verb: string): Promise<CommandResult> {
-    this.assertVerb(verb);
+    const name = this.normalisedVerb(verb);
     return this.deleteMatching({
-      query: `${verb} `,
+      query: `${name} `,
       searchMode: "prefix",
       filterMode: "global",
     });

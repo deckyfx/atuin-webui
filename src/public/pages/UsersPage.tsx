@@ -146,7 +146,7 @@ export function UsersPage() {
                   <td className="px-4 py-3 text-right text-brand font-medium">
                     {user.storeRecords.toLocaleString()}
                   </td>
-                  <td className="px-4 py-3 text-ink-subtle text-xs">{formatServerLocal(String(user.createdAt))}</td>
+                  <td className="px-4 py-3 text-ink-subtle text-xs">{formatServerLocal(user.createdAt)}</td>
                   <td className="px-4 py-3 text-right">
                     {confirmDelete === user.id ? (
                       <div className="flex items-center gap-2 justify-end">

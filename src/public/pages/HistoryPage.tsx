@@ -51,6 +51,8 @@ export function HistoryPage() {
   const [previewedCommands, setPreviewedCommands] = useState<string[]>([]);
   /** Invalidates in-flight previews when the selection changes. */
   const previewSeq = useRef(0);
+  /** True while a delete request is in flight; see changeSelection. */
+  const deletingRef = useRef(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const push = useToastStore((s) => s.push);
@@ -118,7 +120,10 @@ export function HistoryPage() {
       setConfirming(false);
       setBatchPreview(null);
       setPreviewedCommands([]);
-      setBusy(false);
+      // Only a pending *preview* is released here. Clearing it unconditionally
+      // re-enabled the controls in the middle of a delete, because a selection
+      // change during the request looked the same as one before it.
+      if (!deletingRef.current) setBusy(false);
     },
     []
   );
@@ -174,6 +179,7 @@ export function HistoryPage() {
   }
 
   async function deleteSelected() {
+    deletingRef.current = true;
     setBusy(true);
     try {
       const body = await postJson<{
@@ -204,6 +210,7 @@ export function HistoryPage() {
       // happen must never clear the selection as though it had.
       push("error", errorMessage(err, "Delete failed."));
     } finally {
+      deletingRef.current = false;
       setBusy(false);
     }
   }
