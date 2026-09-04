@@ -15,13 +15,15 @@ import type { PruneAuditRow, NewPruneAudit } from "../db/app-schema";
  * A secret value: a single-quoted string, a double-quoted string, or an
  * unquoted run of non-space characters.
  *
- * Quoted forms come first and are matched whole, and an unquoted word absorbs
- * backslash escapes. Stopping at the first space leaves the tail of a
+ * Quoted forms come first and are matched whole — including escaped quotes
+ * inside them, since `"a\"b"` otherwise ends the match at the escape and
+ * leaves the rest of the secret in the row. An unquoted word absorbs
+ * backslash escapes for the same reason. Stopping at the first space leaves the tail of a
  * passphrase in the log — both `--password "correct horse"` and
  * `--password correct\ horse` would persist `horse` — which defeats the point
  * of redacting at all.
  */
-const VALUE = String.raw`(?:'[^']*'|"[^"]*"|(?:\\.|\S)+)`;
+const VALUE = String.raw`(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|(?:\\.|\S)+)`;
 
 const REDACTIONS: Array<[RegExp, string]> = [
   // --password=… / --token … / -p …

@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { getJson, deleteJson, errorMessage, isArray, hasNumber } from "../lib/http";
+import { formatServerLocal } from "../lib/datetime";
 interface User {
   id: number;
   username: string;
@@ -9,12 +10,6 @@ interface User {
   storeRecords: number;
 }
 
-/** The server stores UTC text timestamps; render them in the viewer's zone. */
-function formatDate(value: string): string {
-  const d = new Date(value.replace(" ", "T") + "Z");
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
-}
-
 export function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,6 +17,8 @@ export function UsersPage() {
   const [deleting, setDeleting] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  /** Invalidates an in-flight preview when the operator changes rows. */
+  const previewSeq = useRef(0);
   const [deletePreview, setDeletePreview] = useState<{
     sessions: number;
     records: number;
@@ -48,14 +45,19 @@ export function UsersPage() {
       // account also drops its sessions and every synced record.
       setConfirmDelete(userId);
       setDeletePreview(null);
+      const seq = ++previewSeq.current;
       try {
-        setDeletePreview(
-          await getJson<{ sessions: number; records: number }>(
-            `/api/users/${userId}/delete-preview`,
-            { expect: hasNumber("records") }
-          )
+        const preview = await getJson<{ sessions: number; records: number }>(
+          `/api/users/${userId}/delete-preview`,
+          { expect: hasNumber("records") }
         );
+        // Bound to this request: a response for user A arriving after the
+        // operator moved to user B would otherwise fill B's confirmation with
+        // A's counts.
+        if (seq !== previewSeq.current) return;
+        setDeletePreview(preview);
       } catch (err) {
+        if (seq !== previewSeq.current) return;
         // Close the confirm row rather than leaving it open with a disabled
         // button and no explanation of why it will never enable.
         setDeleteError(errorMessage(err, "Could not read what this would delete"));
@@ -124,7 +126,7 @@ export function UsersPage() {
                   <td className="px-4 py-3 text-right text-brand font-medium">
                     {user.storeRecords.toLocaleString()}
                   </td>
-                  <td className="px-4 py-3 text-ink-subtle text-xs">{formatDate(String(user.createdAt))}</td>
+                  <td className="px-4 py-3 text-ink-subtle text-xs">{formatServerLocal(String(user.createdAt))}</td>
                   <td className="px-4 py-3 text-right">
                     {confirmDelete === user.id ? (
                       <div className="flex items-center gap-2 justify-end">

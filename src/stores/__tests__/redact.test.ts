@@ -106,3 +106,9 @@ test("redacts lowercase inline assignments", () => {
   expect(redactCommand("curl 'https://x?token=abc123secret'")).not.toContain("abc123secret");
   expect(redactCommand("api_key=lowercase_secret ./run")).not.toContain("lowercase_secret");
 });
+
+test("redacts a quoted value containing an escaped quote", () => {
+  const out = redactCommand('login --password "a\\"b secret tail"');
+  expect(out).not.toContain("secret tail");
+  expect(out).not.toContain('b secret');
+});

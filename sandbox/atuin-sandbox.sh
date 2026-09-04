@@ -16,8 +16,15 @@ shift
 # The profile is interpolated into a path, so restrict it to a single harmless
 # path segment: "../../foo" would otherwise point the client's data directory
 # anywhere on the filesystem — including the real one.
-if ! printf '%s' "$PROFILE" | grep -Eq '^[A-Za-z0-9._-]+$' || [ "$PROFILE" = "." ] || [ "$PROFILE" = ".." ]; then
-  echo "Invalid profile name: $PROFILE (letters, digits, dot, dash, underscore)" >&2
+# `case` matches the whole string; grep is line-oriented and would accept
+# $'safe\n../../etc', letting the second line escape $ROOT/clients.
+case "$PROFILE" in
+  "" | "." | "..") ;;
+  *[!A-Za-z0-9._-]*) ;;
+  *) valid=1 ;;
+esac
+if [ "${valid:-0}" -ne 1 ]; then
+  printf 'Invalid profile name (letters, digits, dot, dash, underscore only)\n' >&2
   exit 1
 fi
 

@@ -159,27 +159,35 @@ export async function installAtuin(
   );
   await mkdir(workDir, { recursive: true });
 
-  const tarPath = join(workDir, asset);
-  await Bun.write(tarPath, bytes);
-
-  // --strip-components drops the versioned top-level directory in the tarball.
-  const untar = Bun.spawn(["tar", "-xzf", tarPath, "-C", workDir, "--strip-components=1"], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if ((await untar.exited) !== 0) {
-    throw new Error(`Extract failed: ${await new Response(untar.stderr).text()}`);
-  }
-
+  // try/finally from here: every throw below (extract failure, missing
+  // binary, a failed write or chmod) previously left the full archive behind
+  // under RUNTIME_CONFIG_DIR, and the unique name means the next attempt
+  // cannot reclaim it. The endpoint is reachable over HTTP, so repeated
+  // failures accumulate disk until someone deletes them by hand.
   const dest = managedBinPath();
-  await mkdir(join(envConfig.RUNTIME_CONFIG_DIR, "bin"), { recursive: true });
-  const extracted = Bun.file(join(workDir, "atuin"));
-  if (!(await extracted.exists())) {
-    throw new Error("Archive did not contain an `atuin` binary.");
+  try {
+    const tarPath = join(workDir, asset);
+    await Bun.write(tarPath, bytes);
+
+    // --strip-components drops the versioned top-level directory in the tarball.
+    const untar = Bun.spawn(["tar", "-xzf", tarPath, "-C", workDir, "--strip-components=1"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if ((await untar.exited) !== 0) {
+      throw new Error(`Extract failed: ${await new Response(untar.stderr).text()}`);
+    }
+
+    await mkdir(join(envConfig.RUNTIME_CONFIG_DIR, "bin"), { recursive: true });
+    const extracted = Bun.file(join(workDir, "atuin"));
+    if (!(await extracted.exists())) {
+      throw new Error("Archive did not contain an `atuin` binary.");
+    }
+    await Bun.write(dest, extracted);
+    await chmod(dest, 0o755);
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
   }
-  await Bun.write(dest, extracted);
-  await chmod(dest, 0o755);
-  await rm(workDir, { recursive: true, force: true });
 
   onProgress({ step: "installed", detail: dest });
   return { path: dest, version };

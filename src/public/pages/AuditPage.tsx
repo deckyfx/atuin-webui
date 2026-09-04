@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ScrollText, CheckCircle2, XCircle, HelpCircle } from "lucide-react";
 import { Card, Skeleton } from "../components/Card";
+import { formatUtc } from "../lib/datetime";
 import { getJson, errorMessage, isArray } from "../lib/http";
 
 interface AuditRow {
@@ -21,12 +22,6 @@ interface AuditRow {
  * Deletions propagate to every synced machine and cannot be undone here, so
  * this is the only surviving trace of what a prune removed.
  */
-/** Rows are stored UTC; show them where the reader is. */
-function formatDate(value: string): string {
-  const d = new Date(value.replace(" ", "T") + "Z");
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
-}
-
 export function AuditPage() {
   const [rows, setRows] = useState<AuditRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +69,15 @@ export function AuditPage() {
           // and blank the entire log.
           let sample: string[] = [];
           try {
-            if (row.sample) sample = JSON.parse(row.sample) as string[];
+            if (row.sample) {
+              // Parsed defensively: the column is written by earlier versions
+              // of this app and could hold anything, and a cast would let a
+              // non-array reach .map() and blank the page.
+              const parsed: unknown = JSON.parse(row.sample);
+              sample = Array.isArray(parsed)
+                ? parsed.filter((c): c is string => typeof c === "string")
+                : [];
+            }
           } catch {
             sample = [];
           }
@@ -104,7 +107,7 @@ export function AuditPage() {
                     {row.matchedCount.toLocaleString()} matched
                   </span>
                 )}
-                <span className="text-xs text-ink-subtle">{formatDate(row.createdAt)}</span>
+                <span className="text-xs text-ink-subtle">{formatUtc(row.createdAt)}</span>
               </button>
 
               {isOpen && (

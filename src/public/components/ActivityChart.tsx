@@ -70,7 +70,7 @@ export function ActivityChart({ data, height = 160 }: Props) {
         viewBox={`0 0 100 ${height}`}
         preserveAspectRatio="none"
         className="block overflow-visible"
-        role="img"
+        role="group"
         aria-label={`Daily command volume over ${data.length} days`}
       >
         {[0.5, 1].map((f) => (

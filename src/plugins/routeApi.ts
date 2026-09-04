@@ -471,14 +471,24 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
         succeeded: res.ok,
         output: (res.stdout || res.stderr).trim(),
       });
-      return { success: res.ok, output: (res.stdout || res.stderr).trim() };
+      if (!res.ok) {
+        // A 2xx with success:false reads as "done" to anything that checks the
+        // status line, including the browser helper.
+        set.status = 500;
+        return { message: (res.stderr || res.stdout).trim() || "Dedup failed." };
+      }
+      return { success: true, output: res.stdout.trim() };
     },
     { body: t.Object({ expectedFingerprint: t.String({ minLength: 1 }) }) }
   )
   .get("/audit", async () => await AuditStore.recent(100))
-  .post("/sync", async () => {
+  .post("/sync", async ({ set }) => {
     const res = await AtuinCli.sync();
-    return { success: res.ok, output: (res.stdout || res.stderr).trim() };
+    if (!res.ok) {
+      set.status = 502;
+      return { message: (res.stderr || res.stdout).trim() || "Sync failed." };
+    }
+    return { success: true, output: res.stdout.trim() };
   })
 
   // ─── Sync-server admin (E2E-encrypted: counts only, never commands) ──────
@@ -500,16 +510,39 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
   )
   .delete(
     "/users/:id",
-    async ({ params, set }) => {
-      const deleted = await UserStore.delete(params.id);
-      if (!deleted) {
+    async ({ params, body, set }) => {
+      let outcome: Awaited<ReturnType<typeof UserStore.delete>>;
+      try {
+        outcome = await UserStore.delete(params.id, body?.expectedScope);
+      } catch {
+        // tx.rollback() throws by design; the scope moved under the preview.
+        set.status = 409;
+        const fresh = await UserStore.deletePreview(params.id);
+        return {
+          message: "This account's data changed since it was previewed. Review and confirm again.",
+          preview: fresh,
+        };
+      }
+      if (outcome === "not-found") {
         set.status = 404;
         return { message: "User not found" };
       }
       return { success: true };
     },
     // t.Numeric rejects "12abc" and "" outright; parseInt accepted both.
-    { params: t.Object({ id: t.Numeric() }) }
+    {
+      params: t.Object({ id: t.Numeric() }),
+      // Optional so an operator with curl can still delete, but the UI always
+      // sends what it showed: sessions and records added between preview and
+      // confirm would otherwise be deleted without ever being displayed.
+      body: t.Optional(
+        t.Object({
+          expectedScope: t.Optional(
+            t.Object({ sessions: t.Integer(), records: t.Integer() })
+          ),
+        })
+      ),
+    }
   )
   .get("/sessions", async () => await SessionStore.findAll())
   .delete(

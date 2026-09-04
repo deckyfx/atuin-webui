@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Search, ChevronLeft, ChevronRight, Terminal, Trash2, X, AlertTriangle } from "lucide-react";
 import { useToastStore } from "../stores/toast-store";
 import { getJson, postJson, errorMessage, isAbort, isArray, hasNumber } from "../lib/http";
@@ -49,6 +49,8 @@ export function HistoryPage() {
   // The commands the preview covered. Deleting `selected` instead would remove
   // rows ticked after the count was shown.
   const [previewedCommands, setPreviewedCommands] = useState<string[]>([]);
+  /** Invalidates in-flight previews when the selection changes. */
+  const previewSeq = useRef(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const push = useToastStore((s) => s.push);
@@ -127,6 +129,7 @@ export function HistoryPage() {
 
   async function previewBatch() {
     setBusy(true);
+    const seq = ++previewSeq.current;
     try {
       const taken = [...selected];
       const body = await postJson<{ total: number }>(
@@ -134,13 +137,18 @@ export function HistoryPage() {
         { commands: taken },
         { expect: hasNumber("total") }
       );
+      // A slower earlier preview must not arm the confirm: its count belongs
+      // to a selection the user has already changed, and confirming would
+      // delete a scope that was never shown.
+      if (seq !== previewSeq.current) return;
       setPreviewedCommands(taken);
       setBatchPreview({ total: body.total });
       setConfirming(true);
     } catch (err) {
+      if (seq !== previewSeq.current) return;
       push("error", err instanceof Error ? err.message : "Preview failed.");
     } finally {
-      setBusy(false);
+      if (seq === previewSeq.current) setBusy(false);
     }
   }
 

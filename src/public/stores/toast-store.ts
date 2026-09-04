@@ -16,6 +16,9 @@ interface ToastState {
 
 let nextId = 1;
 
+/** Pending dismissal timers, so a refreshed toast can cancel its predecessor. */
+const timers = new Map<number, ReturnType<typeof setTimeout>>();
+
 /** Beyond this the stack covers content it is meant to annotate. */
 const MAX_TOASTS = 4;
 
@@ -37,18 +40,32 @@ export const useToastStore = create<ToastState>((set) => ({
       const existing = s.toasts.find((t) => t.kind === kind && t.message === message);
       if (existing) {
         timerId = existing.id;
+        // The earlier timer is still pending and would dismiss the refreshed
+        // toast on the original schedule, cutting its visible life short.
+        const pending = timers.get(existing.id);
+        if (pending !== undefined) clearTimeout(pending);
         return { toasts: [...s.toasts.filter((t) => t.id !== existing.id), existing] };
       }
       return { toasts: [...s.toasts, { id, kind, message }].slice(-MAX_TOASTS) };
     });
     // Errors stay until dismissed; transient results clear themselves.
     if (kind !== "error") {
-      setTimeout(
-        () => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== timerId) })),
-        4000
-      );
+      const handle = setTimeout(() => {
+        timers.delete(timerId);
+        set((s) => ({ toasts: s.toasts.filter((t) => t.id !== timerId) }));
+      }, 4000);
+      timers.set(timerId, handle);
     }
   },
 
-  dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+  dismiss: (id) => {
+    // Cancel the pending timer too: dismissing by hand otherwise leaves it to
+    // fire later against an id that may have been reused by a refreshed toast.
+    const pending = timers.get(id);
+    if (pending !== undefined) {
+      clearTimeout(pending);
+      timers.delete(id);
+    }
+    set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+  },
 }));
