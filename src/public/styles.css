@@ -75,9 +75,14 @@
   --c-line: #e2e8f0;
   --c-line-strong: #cbd5e1;
 
+  /* All three meet 4.5:1 against every surface they appear on — surface,
+     raised and hover — measured, not assumed. The previous subtle step was
+     2.45:1 on raised, under even the 3:1 large-text floor, and it carries
+     timestamps and helper text at 12px. "Subtle" cannot mean unreadable, so
+     the whole scale shifted rather than one token. */
   --c-ink: #0f172a;
-  --c-ink-muted: #64748b;
-  --c-ink-subtle: #94a3b8;
+  --c-ink-muted: #475569;
+  --c-ink-subtle: #5d6b80;
 
   --c-brand: #047857;
   --c-brand-soft: #ecfdf5;
@@ -113,9 +118,11 @@
   --dark-c-hover: #1f2937;
   --dark-c-line: #1f2937;
   --dark-c-line-strong: #374151;
+  /* Same rule on the dark surfaces: worst case 5.72:1 (subtle on hover).
+     The previous subtle step was 3.93:1 on raised. */
   --dark-c-ink: #f1f5f9;
-  --dark-c-ink-muted: #94a3b8;
-  --dark-c-ink-subtle: #64748b;
+  --dark-c-ink-muted: #cbd5e1;
+  --dark-c-ink-subtle: #94a3b8;
   --dark-c-brand: #34d399;
   --dark-c-brand-soft: #064e3b;
   --dark-c-danger: #f87171;

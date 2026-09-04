@@ -19,7 +19,16 @@ export function UsersPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   /** Invalidates an in-flight preview when the operator changes rows. */
   const previewSeq = useRef(0);
+  /**
+   * The preview *and* the user it describes.
+   *
+   * The sequence guard already discards a stale response, but pairing the
+   * counts with their userId makes the mismatch impossible to express rather
+   * than merely unlikely: confirming reads the id back and refuses if it is
+   * not the row being confirmed.
+   */
   const [deletePreview, setDeletePreview] = useState<{
+    userId: number;
     sessions: number;
     records: number;
   } | null>(null);
@@ -45,6 +54,9 @@ export function UsersPage() {
       // account also drops its sessions and every synced record.
       setConfirmDelete(userId);
       setDeletePreview(null);
+      // Cleared here rather than only on success: an error from the previous
+      // row otherwise sits above the confirmation for this one.
+      setDeleteError(null);
       const seq = ++previewSeq.current;
       try {
         const preview = await getJson<{ sessions: number; records: number }>(
@@ -57,7 +69,7 @@ export function UsersPage() {
         // operator moved to user B would otherwise fill B's confirmation with
         // A's counts.
         if (seq !== previewSeq.current) return;
-        setDeletePreview(preview);
+        setDeletePreview({ userId, ...preview });
       } catch (err) {
         if (seq !== previewSeq.current) return;
         // Close the confirm row rather than leaving it open with a disabled
@@ -70,9 +82,9 @@ export function UsersPage() {
     // Confirmed against a specific preview, so send it: the server recomputes
     // the counts inside the transaction and refuses if the account grew.
     const confirmedScope = deletePreview;
-    if (!confirmedScope) {
-      // Unreachable through the UI (the button is disabled without a preview),
-      // but the request must never be sent without the scope it displayed.
+    if (!confirmedScope || confirmedScope.userId !== userId) {
+      // Unreachable through the UI, but the request must never carry a scope
+      // that was computed for a different account.
       setDeleteError("Preview the deletion scope before confirming.");
       return;
     }
@@ -80,14 +92,16 @@ export function UsersPage() {
     setConfirmDelete(null);
     setDeleteError(null);
     try {
-      await deleteJson(`/api/users/${userId}`, { expectedScope: confirmedScope });
+      await deleteJson(`/api/users/${userId}`, {
+        expectedScope: { sessions: confirmedScope.sessions, records: confirmedScope.records },
+      });
       setUsers((prev) => prev.filter((u) => u.id !== userId));
     } catch (err) {
       if (err instanceof HttpError && err.status === 409) {
         // Not a failure: the scope moved between preview and confirm. Show the
         // new numbers and ask again rather than reporting an error.
         const fresh = (err.body as { preview?: { sessions: number; records: number } })?.preview;
-        setDeletePreview(fresh ?? null);
+        setDeletePreview(fresh ? { userId, ...fresh } : null);
         setConfirmDelete(fresh ? userId : null);
         setDeleteError(errorMessage(err, "This account changed since it was previewed"));
         return;

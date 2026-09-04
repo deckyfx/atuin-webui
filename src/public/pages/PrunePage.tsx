@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Search, Trash2, X, CopyMinus, RefreshCw, Scissors, AlertTriangle, Sparkles, Check } from "lucide-react";
 import { NOISE_VERBS } from "../lib/noise";
 import { getJson, postJson, errorMessage, hasNumber, isArray, HttpError } from "../lib/http";
@@ -61,6 +61,8 @@ export function PrunePage() {
   const [verbPreview, setVerbPreview] = useState<{ total: number; unique: number; bare: number } | null>(null);
   const [verbConfirming, setVerbConfirming] = useState(false);
   const [dedupConfirming, setDedupConfirming] = useState(false);
+  /** Invalidates in-flight previews when the chip selection changes. */
+  const previewSeq = useRef(0);
   const [dedupPreview, setDedupPreview] = useState<DedupPreview | null>(null);
 
 
@@ -100,7 +102,15 @@ export function PrunePage() {
       // stale preview must be replaced, never left on screen next to a
       // confirm button.
       if (err instanceof HttpError && err.status === 409) {
-        const fresh = (err.body as { preview?: DedupPreview })?.preview ?? null;
+        // Validated, not cast: this is a response body, and a malformed one
+        // would render "undefined duplicate entries" beside a confirm button.
+        const candidate = (err.body as { preview?: unknown })?.preview;
+        const fresh =
+          candidate &&
+          typeof (candidate as DedupPreview).removable === "number" &&
+          typeof (candidate as DedupPreview).groups === "number"
+            ? (candidate as DedupPreview)
+            : null;
         setDedupPreview(fresh);
         setDedupConfirming(false);
         setResult(
@@ -124,7 +134,7 @@ export function PrunePage() {
     try {
       setDedupPreview(
         await getJson<DedupPreview>("/api/dedup/preview", {
-          expect: hasNumber("removable"),
+          expect: hasNumber("removable", "groups"),
         })
       );
       setDedupConfirming(true);
@@ -138,21 +148,27 @@ export function PrunePage() {
   async function previewVerbs() {
     setBusy(true);
     setResult(null);
+    const seq = ++previewSeq.current;
     try {
       const taken = [...picked];
-      setVerbPreview(
-        await postJson<{ total: number; unique: number; bare: number }>(
-          "/api/prune/preview-verbs",
-          { verbs: taken },
-          { expect: hasNumber("total") }
-        )
+      const preview = await postJson<{ total: number; unique: number; bare: number }>(
+        "/api/prune/preview-verbs",
+        { verbs: taken },
+        // Every field the confirm renders: validating `total` alone let the
+        // others arrive undefined and reach the UI as "undefined".
+        { expect: hasNumber("total", "unique", "bare") }
       );
+      // A preview for a chip selection the user has since changed must not arm
+      // the confirm — the same race HistoryPage guards.
+      if (seq !== previewSeq.current) return;
+      setVerbPreview(preview);
       setPreviewedVerbs(taken);
     } catch (err) {
+      if (seq !== previewSeq.current) return;
       setResult(`Preview failed: ${errorMessage(err)}`);
       setVerbPreview(null);
     } finally {
-      setBusy(false);
+      if (seq === previewSeq.current) setBusy(false);
     }
   }
 
@@ -276,6 +292,7 @@ export function PrunePage() {
                     else next.add(v.verb);
                     return next;
                   });
+                  previewSeq.current += 1;
                   setVerbPreview(null);
                   setVerbConfirming(false);
                 }}

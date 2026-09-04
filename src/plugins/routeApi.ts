@@ -419,7 +419,7 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
   )
   .post(
     "/prune/execute-verbs",
-    async ({ body }) => {
+    async ({ body, set }) => {
       // Sequential: each delete appends to the record store, and concurrent
       // writers would contend on the same sqlite file.
       const auditId = await AuditStore.begin({
@@ -461,6 +461,11 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
         output: results.filter((r) => !r.ok).map((r) => `${r.verb}: ${r.message}`).join("\n"),
       });
 
+      if (results.length > 0 && results.every((r) => !r.ok)) {
+        // Consistent with /dedup and /history/delete-batch: nothing was
+        // removed and every verb was refused, so the status line says so.
+        set.status = 500;
+      }
       return { removed, results };
     },
     { body: verbListSchema }

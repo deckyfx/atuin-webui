@@ -1,5 +1,5 @@
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { getAppDb } from "./app";
@@ -101,7 +101,16 @@ export class Migrator {
     try {
       return await fn();
     } finally {
-      rmSync(lockPath, { force: true });
+      // Only our own lock. If a reclaimer decided we were dead and took it,
+      // the file now belongs to another process and deleting it would let a
+      // third in while that one is still migrating.
+      try {
+        if (readFileSync(lockPath, "utf8").trim() === String(process.pid)) {
+          rmSync(lockPath, { force: true });
+        }
+      } catch {
+        // Already gone; nothing to release.
+      }
     }
   }
 
@@ -112,20 +121,36 @@ export class Migrator {
    * process, which is how a mutex turns into two concurrent writers.
    */
   private static reclaimIfStillDead(lockPath: string): void {
-    let pid: string;
+    let deadPid: string;
     try {
-      pid = readFileSync(lockPath, "utf8").trim();
+      deadPid = readFileSync(lockPath, "utf8").trim();
     } catch {
       return; // Already gone.
     }
     if (this.holderAlive(lockPath)) return;
+
+    // Claimed by rename, not by unlink. rename is atomic: exactly one process
+    // can move a given file, so two reclaimers cannot both decide they are the
+    // one clearing it. An unlink guarded by a re-read still has a window in
+    // which the holder recreates the lock between the check and the delete.
+    const claim = `${lockPath}.reclaim-${process.pid}-${Date.now().toString(36)}`;
     try {
-      // Re-read once more: the content must be unchanged from what we judged.
-      if (readFileSync(lockPath, "utf8").trim() !== pid) return;
-      rmSync(lockPath, { force: true });
+      renameSync(lockPath, claim);
     } catch {
-      // Someone else removed it first; the next create attempt will settle it.
+      return; // Someone else moved or replaced it first.
     }
+
+    try {
+      if (readFileSync(claim, "utf8").trim() !== deadPid) {
+        // Not the file we judged: a live process had already replaced it, so
+        // put it back rather than discarding a lock that is in use.
+        renameSync(claim, lockPath);
+        return;
+      }
+    } catch {
+      // Unreadable; fall through and remove it.
+    }
+    rmSync(claim, { force: true });
   }
 
   /** Whether the process named in the lock file still exists. */

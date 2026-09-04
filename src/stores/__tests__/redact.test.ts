@@ -127,3 +127,10 @@ test("ordinary author fields are not mistaken for credentials", () => {
   // The genuine ones still go.
   expect(redactCommand("AUTH_TOKEN=abc123 ./run")).not.toContain("abc123");
 });
+
+test("redacts a value separated by multiple spaces", () => {
+  // A single-character separator class matched only one space, so aligned or
+  // pasted commands kept their secrets.
+  expect(redactCommand("login --password   hunter2")).not.toContain("hunter2");
+  expect(redactCommand("deploy --token\t\tabc123")).not.toContain("abc123");
+});

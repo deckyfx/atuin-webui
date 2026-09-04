@@ -35,6 +35,8 @@ export function SessionsPage() {
   async function handleRevoke(sessionId: number) {
     if (confirmRevoke !== sessionId) {
       setConfirmRevoke(sessionId);
+      // The previous failure described a different attempt.
+      setRevokeError(null);
       return;
     }
     setRevoking(sessionId);

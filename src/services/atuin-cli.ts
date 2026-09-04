@@ -157,6 +157,17 @@ export class AtuinCli {
         new Response(proc.stderr).text(),
       ]);
       exitCode = await proc.exited;
+    } catch (err) {
+      // A failed read is reported as a failed command, not thrown: callers
+      // treat a non-ok result as "this did not work", and letting a stream
+      // error escape here would surface as an unhandled 500 instead.
+      proc.kill();
+      return {
+        ok: false,
+        stdout,
+        stderr: err instanceof Error ? err.message : String(err),
+        exitCode: -1,
+      };
     } finally {
       clearTimeout(timer);
     }

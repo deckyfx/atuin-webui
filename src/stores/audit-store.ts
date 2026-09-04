@@ -27,7 +27,10 @@ const VALUE = String.raw`(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|(?:\\.|\S)+)`;
 
 const REDACTIONS: Array<[RegExp, string]> = [
   // --password=… / --token … / -p …
-  [new RegExp(String.raw`(-{1,2}(?:password|passwd|pwd|token|secret|api[-_]?key|auth|credential|private[-_]?key|access[-_]?key|bearer|passphrase)[=\s])${VALUE}`, "gi"),
+  // `(?:=|\s+)` rather than `[=\s]`: a single-character class matched exactly
+  // one separator, so `--password   secret` — aligned columns, or a pasted
+  // command — left the value in the log.
+  [new RegExp(String.raw`(-{1,2}(?:password|passwd|pwd|token|secret|api[-_]?key|auth|credential|private[-_]?key|access[-_]?key|bearer|passphrase)(?:=|\s+))${VALUE}`, "gi"),
     "$1«redacted»"],
   // FOO_TOKEN=… in an assignment or export
   // Case-insensitive: `token=abc` in a URL or a lowercase shell variable is

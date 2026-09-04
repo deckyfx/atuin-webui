@@ -110,12 +110,9 @@ class EnvConfig {
   /** Resolves the bootstrap key from file or inline, whichever is set. */
   async resolveKey(): Promise<string | undefined> {
     if (this.KEY_FILE) {
+      let contents: string;
       try {
-        const key = (await Bun.file(this.KEY_FILE).text()).trim();
-        if (!key) {
-          throw new Error(`ATUIN_KEY_FILE ${this.KEY_FILE} is empty.`);
-        }
-        return key;
+        contents = await Bun.file(this.KEY_FILE).text();
       } catch (err) {
         // Named explicitly: an unreadable key file otherwise surfaces as an
         // opaque login failure far from the actual misconfiguration.
@@ -125,6 +122,15 @@ class EnvConfig {
           }`
         );
       }
+
+      // Outside the catch: an empty file is a distinct problem from an
+      // unreadable one, and wrapping it in the read handler reported it as a
+      // read failure.
+      const key = contents.trim();
+      if (!key) {
+        throw new Error(`ATUIN_KEY_FILE ${this.KEY_FILE} is empty.`);
+      }
+      return key;
     }
     return this.KEY_INLINE?.trim();
   }
@@ -201,6 +207,15 @@ class EnvConfig {
   }
 
   /** Explicit confirmation required before binding beyond loopback. */
+  /** Whether HOST refers to the loopback interface. */
+  get IS_LOOPBACK_HOST(): boolean {
+    const h = this.HOST.trim().toLowerCase().replace(/^\[|\]$/g, "");
+    // The whole 127.0.0.0/8 block and IPv6 loopback, not just 127.0.0.1:
+    // 127.0.0.2 is as local as 127.0.0.1, and ::1 is what an IPv6-first host
+    // resolves "localhost" to. Both were refused as if they were public.
+    return h === "localhost" || h === "::1" || /^127\.\d+\.\d+\.\d+$/.test(h);
+  }
+
   get ALLOW_PUBLIC_BIND(): boolean {
     const raw = Bun.env.ALLOW_PUBLIC_BIND;
     return raw === "1" || raw?.toLowerCase() === "true";

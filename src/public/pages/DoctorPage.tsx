@@ -53,7 +53,11 @@ export function DoctorPage() {
   async function installAtuin() {
     setInstalling(true);
     try {
-      const body = await postJson<{ version: string }>("/api/doctor/install-atuin", {});
+      // Validated: the version is the whole content of the toast, and an
+      // absent one reads as "Installed atuin undefined".
+      const body = await postJson<{ version: string }>("/api/doctor/install-atuin", {}, {
+        expect: (v) => typeof (v as { version?: unknown })?.version === "string",
+      });
       push("success", `Installed atuin ${body.version}`);
       load();
     } catch (err) {

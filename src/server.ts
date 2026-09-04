@@ -27,7 +27,7 @@ export { migrationError };
 // routinely contains tokens. A warning is easy to miss in a log; refusing to
 // start is not. The container sets both, because loopback inside a container
 // is unreachable from the host.
-if (envConfig.HOST !== "127.0.0.1" && envConfig.HOST !== "localhost" && !envConfig.ALLOW_PUBLIC_BIND) {
+if (!envConfig.IS_LOOPBACK_HOST && !envConfig.ALLOW_PUBLIC_BIND) {
   console.error(
     `Refusing to listen on ${envConfig.HOST}: every endpoint is unauthenticated.\n` +
       `Put authentication in front of it, then set ALLOW_PUBLIC_BIND=1 to confirm.`
@@ -43,7 +43,7 @@ const app = new Elysia()
 console.log(
   `Atuin Dashboard running at http://${envConfig.HOST}:${envConfig.PORT}`
 );
-if (envConfig.HOST !== "127.0.0.1" && envConfig.HOST !== "localhost") {
+if (!envConfig.IS_LOOPBACK_HOST) {
   console.warn(
     `⚠️  Listening on ${envConfig.HOST} with ALLOW_PUBLIC_BIND set: every endpoint ` +
       `is unauthenticated and can delete history on every synced machine.`

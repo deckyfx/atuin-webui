@@ -49,7 +49,9 @@ export function DashboardPage() {
   useEffect(() => {
     Promise.all([
       getJson<ClientOverview>("/api/client/overview", {
-        expect: hasNumber("totalCommands"),
+        // All three: validating one let the others arrive undefined and
+        // render as "undefined" in a stat tile.
+        expect: hasNumber("totalCommands", "totalHosts", "totalSessions"),
       }),
       getJson<VerbCount[]>("/api/history/verbs", { expect: isArray }),
       getJson<HostCount[]>("/api/history/hosts", { expect: isArray }),

@@ -187,7 +187,13 @@ export function HistoryPage() {
         removedRows?: number;
         total: number;
         refused?: unknown[];
-      }>("/api/history/delete-batch", { commands: previewedCommands });
+      }>(
+        "/api/history/delete-batch",
+        { commands: previewedCommands },
+        // Both counts: the toast reports them, and "Deleted undefined of
+        // undefined" is worse than an error.
+        { expect: hasNumber("deleted", "total") }
+      );
 
       if (body.refused?.length) {
         push(

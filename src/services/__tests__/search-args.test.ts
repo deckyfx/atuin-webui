@@ -36,6 +36,10 @@ describe("searchArgs builds the query the caller asked for", () => {
     expect(args[args.length - 1]).toBe("git ");
     // atuin rejects flags that follow the positional, which is how an earlier
     // version of this silently failed every invocation.
+    // Present *and* before the positional: asserting only the index would
+    // pass vacuously if the flag were dropped entirely (indexOf → -1).
+    expect(args).toContain("--cmd-only");
+    expect(args.indexOf("--cmd-only")).toBeGreaterThanOrEqual(0);
     expect(args.indexOf("--cmd-only")).toBeLessThan(args.length - 1);
   });
 
