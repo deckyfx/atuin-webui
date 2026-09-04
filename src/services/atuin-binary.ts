@@ -242,7 +242,9 @@ async function performInstall(
 
     // --strip-components drops the versioned top-level directory in the tarball.
     const untar = Bun.spawn(["tar", "-xzf", tarPath, "-C", workDir, "--strip-components=1"], {
-      stdout: "pipe",
+      // stdout is ignored rather than piped: nothing reads it, and an unread
+      // pipe is another buffer that can fill and block the child.
+      stdout: "ignore",
       stderr: "pipe",
     });
     // Drained before awaiting exit. tar writes errors to a pipe with a finite

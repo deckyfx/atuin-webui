@@ -23,12 +23,15 @@ const toneMap: Record<StatTone, string> = {
 export function StatCard({ label, value, sub, tone = "default", icon: Icon }: StatCardProps) {
   return (
     <div className={`rounded-xl border p-5 ${toneMap[tone]}`}>
-      <div className="flex items-center gap-1.5 mb-2 opacity-70">
+      {/* No opacity on the small text. At 12px the contrast floor is 4.5:1,
+          and 60-70% opacity over a tinted card can fall under it; the label is
+          already distinguished by size, weight and caps. */}
+      <div className="flex items-center gap-1.5 mb-2">
         {Icon && <Icon size={13} />}
         <p className="text-xs font-medium uppercase tracking-wider">{label}</p>
       </div>
       <p className="text-3xl font-bold tabular-nums">{value}</p>
-      {sub && <p className="text-xs opacity-60 mt-1">{sub}</p>}
+      {sub && <p className="text-xs mt-1">{sub}</p>}
     </div>
   );
 }

@@ -49,9 +49,14 @@ COPY --from=builder /build/binaries/atuin-dashboard-linux-* /usr/local/bin/atuin
 # 0.0.0.0 inside the container, because loopback there is unreachable from the
 # host. The API is unauthenticated, so docker-compose publishes the port on the
 # host's loopback only -- exposing it beyond that needs auth in front.
+# HOST=0.0.0.0 because loopback inside a container is unreachable from the
+# host. ALLOW_PUBLIC_BIND is deliberately NOT set here: baking it in would
+# answer the "should this be reachable?" question on the operator's behalf for
+# every container, which is the question the gate exists to ask. docker-compose
+# sets it alongside a loopback-published port, so the decision is visible in
+# the file an operator edits.
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
-    ALLOW_PUBLIC_BIND=1 \
     PORT=3001 \
     ATUIN_PROFILE=live \
     ATUIN_CLIENT_DATA_DIR=/data/atuin \

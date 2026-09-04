@@ -202,6 +202,12 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
             </label>
             <textarea
               id="setup-key"
+              // A bip39 phrase is a credential: keep it out of autofill stores
+              // and out of a spellchecker, which may ship text to a service.
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               value={key}
               onChange={(e) => setKey(e.target.value)}
               rows={3}

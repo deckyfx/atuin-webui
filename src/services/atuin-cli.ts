@@ -204,7 +204,7 @@ export class AtuinCli {
    * parser rejects flags that appear after the positional, so the query must
    * always be the final argument.
    */
-  private static searchArgs(rule: SearchRule, extra: string[]): string[] {
+  static searchArgs(rule: SearchRule, extra: string[]): string[] {
     const args: string[] = [
       "search",
       "--search-mode", rule.searchMode ?? "full-text",

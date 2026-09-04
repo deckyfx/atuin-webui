@@ -98,7 +98,7 @@ export function TopRibbon() {
         disabled={syncing}
         className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-ink-muted hover:text-ink hover:bg-hover disabled:opacity-50"
       >
-        <RefreshCw size={13} className={syncing ? "animate-spin" : undefined} />
+        <RefreshCw size={13} className={syncing ? "motion-safe:animate-spin" : undefined} />
         {syncing ? "Syncing…" : "Sync"}
       </button>
 
@@ -151,7 +151,9 @@ export function ToastStack() {
                 : "border-line bg-overlay text-ink-muted"
           }`}
         >
-          <pre className="whitespace-pre-wrap font-sans">{t.message}</pre>
+          {/* A span, not a pre: a button may only contain phrasing content,
+              and the wrapping is what mattered here, not the element. */}
+          <span className="block whitespace-pre-wrap font-sans">{t.message}</span>
         </button>
       ))}
     </div>

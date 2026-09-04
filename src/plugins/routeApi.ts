@@ -13,6 +13,20 @@ import { installAtuin } from "../services/atuin-binary";
 import { envConfig } from "../env-config";
 
 /** Body schema for a batch-selection rule. Mirrors {@link SearchRule}. */
+/**
+ * Verb lists for the purge routes.
+ *
+ * The pattern rejects whitespace-only entries at the boundary. `minLength: 1`
+ * accepts " ", which the service then refuses — correctly, but as a 500, which
+ * describes a bad request as a server fault.
+ */
+const verbListSchema = t.Object({
+  verbs: t.Array(t.String({ minLength: 1, pattern: "\\S" }), {
+    minItems: 1,
+    maxItems: 50,
+  }),
+});
+
 const ruleSchema = t.Object({
   query: t.String(),
   searchMode: t.Optional(
@@ -296,7 +310,9 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
         refused: results.filter((r) => !r.ok),
         total: body.commands.length,
       };
-      if (deleted === 0 && results.length > 0) {
+      // `results` always has an entry here: the body requires at least one
+      // command, so the length test only obscured the real condition.
+      if (deleted === 0) {
         // Nothing was deleted and every command was refused: a 2xx here reads
         // as "done" to anything checking the status line, which is how /dedup
         // already behaves.
@@ -399,7 +415,7 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
         return { message: err instanceof Error ? err.message : "Preview failed." };
       }
     },
-    { body: t.Object({ verbs: t.Array(t.String({ minLength: 1 }), { minItems: 1, maxItems: 50 }) }) }
+    { body: verbListSchema }
   )
   .post(
     "/prune/execute-verbs",
@@ -447,7 +463,7 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
 
       return { removed, results };
     },
-    { body: t.Object({ verbs: t.Array(t.String({ minLength: 1 }), { minItems: 1, maxItems: 50 }) }) }
+    { body: verbListSchema }
   )
   .get("/dedup/preview", async () => await HistoryStore.duplicatePreview(20))
   .post(

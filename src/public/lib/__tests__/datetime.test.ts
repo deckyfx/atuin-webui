@@ -6,7 +6,10 @@ describe("timestamp contracts", () => {
     // The bug this guards: rendering atuin's localtime column through the UTC
     // path shifted every value by the server's offset.
     const stamp = "2026-05-27 08:04:04";
-    if (new Date().getTimezoneOffset() !== 0) {
+    // The offset *at that instant*, not today's: in a DST zone the two can
+    // differ, and today's would make this guard skip or fire wrongly.
+    const offsetThen = new Date("2026-05-27T08:04:04").getTimezoneOffset();
+    if (offsetThen !== 0) {
       expect(formatUtc(stamp)).not.toBe(formatServerLocal(stamp));
     }
   });

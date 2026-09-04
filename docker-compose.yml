@@ -14,6 +14,10 @@ services:
       # deletes real history. Put a reverse proxy with TLS in front to expose it.
       - "127.0.0.1:3001:3001"
     environment:
+      # Required because HOST is 0.0.0.0 inside the container. Safe *here*
+      # because the port below is published to the host's loopback only —
+      # publish it more widely and this becomes a genuine exposure.
+      ALLOW_PUBLIC_BIND: "1"
       ATUIN_PROFILE: live
       # Pin the client release. Bump and restart to upgrade -- no rebuild.
       ATUIN_VERSION: "18.20.1"
