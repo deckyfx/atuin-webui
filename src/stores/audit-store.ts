@@ -32,10 +32,15 @@ const REDACTIONS: Array<[RegExp, string]> = [
   // FOO_TOKEN=… in an assignment or export
   // Case-insensitive: `token=abc` in a URL or a lowercase shell variable is
   // just as much a secret as GITHUB_TOKEN=abc.
-  [new RegExp(String.raw`\b([A-Za-z0-9_]*(?:token|secret|password|passwd|api_?key|auth|bearer)[A-Za-z0-9_]*=)${VALUE}`, "gi"),
+  // "auth"/"bearer" are matched as whole-ish words, not substrings: as
+  // substrings they redacted AUTHOR=jane and author_id=7, which are not
+  // secrets and whose loss makes the log harder to read.
+  [new RegExp(String.raw`\b([A-Za-z0-9_]*(?:token|secret|password|passwd|api_?key|auth_?token|authorization|bearer_?token)[A-Za-z0-9_]*=)${VALUE}`, "gi"),
     "$1«redacted»"],
   // Authorization: Bearer …  (often inside a quoted header argument)
-  [new RegExp(String.raw`(Authorization:\s*(?:Bearer|Basic)\s+)[^"']+`, "gi"),
+  // Bounded to the credential itself: `[^"']+` ran to the end of an unquoted
+  // command, so `curl -H Authorization: Bearer abc https://x` lost the URL too.
+  [new RegExp(String.raw`(Authorization:\s*(?:Bearer|Basic)\s+)[^\s"']+`, "gi"),
     "$1«redacted»"],
   // MySQL-style attached password: -pSECRET. Anchored to a token start so it
   // cannot fire mid-word (a path like "dump-pending" is not a password).

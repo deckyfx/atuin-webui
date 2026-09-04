@@ -50,11 +50,17 @@ export class HistoryStore {
    * therefore overstates the machine count. The dashboard itself never adds a
    * host: it runs under the client's existing host_id.
    */
-  private static machineExpr = sql<string>`replace(
-    case when instr(${clientHistory.hostname}, ':') > 0
-         then substr(${clientHistory.hostname}, 1, instr(${clientHistory.hostname}, ':') - 1)
-         else ${clientHistory.hostname} end,
-    '.local', ''
+  private static machineExpr = sql<string>`(
+    with h(name) as (
+      select case when instr(${clientHistory.hostname}, ':') > 0
+                  then substr(${clientHistory.hostname}, 1, instr(${clientHistory.hostname}, ':') - 1)
+                  else ${clientHistory.hostname} end
+    )
+    -- Only a *terminal* .local: replace() would also strip it from the middle
+    -- of a name like "my.local.box", merging two genuinely distinct machines.
+    select case when name like '%.local' then substr(name, 1, length(name) - 6)
+                else name end
+    from h
   )`;
 
   /** Paginated, filtered history listing, newest first. */

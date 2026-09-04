@@ -3,7 +3,6 @@
     "oven.bun-vscode",
     "bradlc.vscode-tailwindcss",
     "esbenp.prettier-vscode",
-    "dbaeumer.vscode-eslint",
     "ms-vscode.vscode-typescript-next",
     "mikestead.dotenv",
     "usernamehw.errorlens"

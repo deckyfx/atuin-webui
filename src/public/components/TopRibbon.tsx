@@ -28,13 +28,21 @@ export function TopRibbon() {
   const push = useToastStore((s) => s.push);
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [statusFailed, setStatusFailed] = useState(false);
 
   useEffect(() => {
     getJson<SetupStatus>("/api/setup/status")
-      .then(setStatus)
-      // Left null on failure, which the badge renders as "unknown" rather than
-      // claiming a profile it never confirmed.
-      .catch(() => setStatus(null));
+      .then((s) => {
+        setStatus(s);
+        setStatusFailed(false);
+      })
+      // Failure and "still loading" are both `status === null`, but they are
+      // not the same state: one resolves on its own, the other never will.
+      // The badge says which rather than showing a spinner forever.
+      .catch(() => {
+        setStatus(null);
+        setStatusFailed(true);
+      });
   }, []);
 
   async function sync() {
@@ -65,7 +73,9 @@ export function TopRibbon() {
         }`}
         title={
           !known
-            ? "Checking which client profile is active…"
+            ? statusFailed
+              ? "Could not read the client profile — the dashboard API is unreachable"
+              : "Checking which client profile is active…"
             : live
               ? "Deletions reach every synced machine"
               : status?.profile === "sandbox"

@@ -82,8 +82,14 @@ export class AtuinCli {
       let out = "";
       try {
         const proc = Bun.spawn([await resolveAtuinBin(), "uuid"], { stdout: "pipe", stderr: "ignore" });
-        out = (await new Response(proc.stdout).text()).trim();
-        await proc.exited;
+        // Exit status first: a non-zero run can still have written partial
+        // output, and a truncated uuid is worse than the random fallback
+        // because it looks like a real session id.
+        const [text, code] = await Promise.all([
+          new Response(proc.stdout).text(),
+          proc.exited,
+        ]);
+        out = code === 0 ? text.trim() : "";
       } catch {
         // Binary missing: fall back so run() can report the real problem.
       }
@@ -179,7 +185,19 @@ export class AtuinCli {
     if (rule.after) args.push("--after", rule.after);
     if (rule.limit !== undefined) args.push("--limit", String(rule.limit));
     args.push(...extra);
-    if (rule.query) args.push(rule.query);
+
+    // An empty query must never reach the CLI. `atuin search` with no
+    // positional matches every entry, so dropping the argument turns "match
+    // nothing" into "match everything" — 6,455 rows on the history this was
+    // measured against — and deleteMatching would append deletion records for
+    // all of them on every synced machine. Callers guard this today; the
+    // primitive refuses so that remains true when a new caller appears.
+    if (!rule.query) {
+      throw new Error(
+        "Refusing to build an atuin search with an empty query: it would match every entry."
+      );
+    }
+    args.push(rule.query);
     return args;
   }
 
@@ -195,12 +213,21 @@ export class AtuinCli {
    * into "0 matches" would read as "this rule is safe" immediately before a
    * delete that would in fact match plenty.
    */
+  /**
+   * The "matched nothing" convention, in one place.
+   *
+   * Exit 1 specifically: that is the code atuin uses for an empty result.
+   * Treating any non-zero exit this way would silently swallow a killed
+   * process (SIGKILL, 137) or a missing binary (127) as "this rule is safe" —
+   * immediately before a delete. Two copies of this test could drift apart,
+   * and the preview and the delete must agree on what "nothing" means.
+   */
+  private static matchedNothing(res: CommandResult): boolean {
+    return res.exitCode === 1 && !res.stderr.trim() && res.stdout.length === 0;
+  }
+
   private static assertSearchOk(res: CommandResult): void {
-    if (res.ok) return;
-    // Exit 1 specifically: that is the "matched nothing" code. Treating any
-    // non-zero exit as an empty result would silently swallow a killed process
-    // (SIGKILL, 137) or a missing binary (127) as "this rule is safe".
-    if (res.exitCode === 1 && !res.stderr.trim() && res.stdout.length === 0) return;
+    if (res.ok || this.matchedNothing(res)) return;
     throw new Error(res.stderr.trim() || `atuin search failed (exit ${res.exitCode})`);
   }
 
@@ -235,13 +262,9 @@ export class AtuinCli {
    */
   static async deleteMatching(rule: SearchRule): Promise<CommandResult> {
     const res = await this.run(this.searchArgs(rule, ["--delete", "--include-duplicates"]));
-    // Same convention as the preview: exit 1 with no output means the query
-    // matched nothing. A delete that removed nothing because there was nothing
-    // to remove is a success, not a failure to report to the user.
-    if (res.exitCode === 1 && !res.stderr.trim() && res.stdout.length === 0) {
-      return { ...res, ok: true };
-    }
-    return res;
+    // A delete that removed nothing because there was nothing to remove is a
+    // success, not a failure to report to the user.
+    return this.matchedNothing(res) ? { ...res, ok: true } : res;
   }
 
   /**
@@ -320,9 +343,23 @@ export class AtuinCli {
    * separately rather than swept in, because removing it needs a bare-prefix
    * delete that would take the neighbours too.
    */
+  /**
+   * Rejects a verb that would build a meaningless rule.
+   *
+   * The query is `verb + " "`, so a blank verb yields a lone space: non-empty
+   * enough to pass the query check, but a "commands starting with a space"
+   * rule that nobody asked for.
+   */
+  private static assertVerb(verb: string): void {
+    if (!verb.trim()) {
+      throw new Error("Refusing to purge an empty query: it does not name a command.");
+    }
+  }
+
   static async previewVerb(
     verb: string
   ): Promise<PreviewResult & { verb: string; bare: number }> {
+    this.assertVerb(verb);
     const preview = await this.previewDelete({
       query: `${verb} `,
       searchMode: "prefix",
@@ -344,6 +381,7 @@ export class AtuinCli {
 
   /** Deletes everything invoking `verb`. See {@link previewVerb} on scope. */
   static async deleteVerb(verb: string): Promise<CommandResult> {
+    this.assertVerb(verb);
     return this.deleteMatching({
       query: `${verb} `,
       searchMode: "prefix",

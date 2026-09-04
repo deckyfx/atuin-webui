@@ -98,8 +98,6 @@
   --c-series-3: #1baf7a;
 }
 
-/* "Auto": no data-theme attribute, so the OS decides. The :not() guard keeps
-   an explicit light choice winning over OS dark. */
 /*
  * The dark palette, defined once.
  *
@@ -125,11 +123,20 @@
   --dark-c-warn: #fbbf24;
   --dark-c-warn-soft: #451a03;
   --dark-c-grid: #1f2937;
+  /* Categorical series, validated all-pairs against the surface they are drawn
+     on (--dark-c-raised #0b1220), not the light one:
+       CVD            worst pair #199e70 vs #d95926, ΔE 9.4 deutan (tritan 4.0)
+       normal vision  worst pair #199e70 vs #3987e5, ΔE 20.9
+       contrast       all three ≥ 3:1, so no relief rule is needed here
+     The light block's figures do not carry over — different values, different
+     surface. Adding a fourth slot requires re-running the validator. */
   --dark-c-series-1: #3987e5;
   --dark-c-series-2: #d95926;
   --dark-c-series-3: #199e70;
 }
 
+/* "Auto": no data-theme attribute, so the OS decides. The :not() guard below
+   keeps an explicit light choice winning over OS dark. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;

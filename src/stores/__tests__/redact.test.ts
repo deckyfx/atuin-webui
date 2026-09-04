@@ -112,3 +112,18 @@ test("redacts a quoted value containing an escaped quote", () => {
   expect(out).not.toContain("secret tail");
   expect(out).not.toContain('b secret');
 });
+
+test("an Authorization header does not swallow the rest of the command", () => {
+  const out = redactCommand("curl -H Authorization: Bearer abc123 https://example.test/x");
+  expect(out).not.toContain("abc123");
+  // The bound matters: an unbounded match ran to end-of-line and ate the URL.
+  expect(out).toContain("https://example.test/x");
+});
+
+test("ordinary author fields are not mistaken for credentials", () => {
+  // "auth" as a substring redacted these, which loses useful audit detail.
+  expect(redactCommand("git log --author=jane")).toContain("jane");
+  expect(redactCommand("curl 'https://x?author_id=7'")).toContain("author_id=7");
+  // The genuine ones still go.
+  expect(redactCommand("AUTH_TOKEN=abc123 ./run")).not.toContain("abc123");
+});

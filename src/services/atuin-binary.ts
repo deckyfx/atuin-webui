@@ -84,16 +84,6 @@ export interface InstallProgress {
 }
 
 /**
- * Downloads the atuin client from GitHub Releases and installs it.
- *
- * The published .sha256 is fetched and checked before anything is extracted or
- * marked executable: this code runs a downloaded binary, so an unverified
- * artefact would be a supply-chain hole rather than a convenience.
- *
- * @throws if the platform is unsupported, the download fails, or the digest
- *         does not match.
- */
-/**
  * Serialises installs within this process.
  *
  * The install route is reachable over HTTP, so two requests can overlap. Even
@@ -103,6 +93,16 @@ export interface InstallProgress {
  */
 let installChain: Promise<unknown> = Promise.resolve();
 
+/**
+ * Downloads the atuin client from GitHub Releases and installs it.
+ *
+ * The published .sha256 is fetched and checked before anything is extracted or
+ * marked executable: this code runs a downloaded binary, so an unverified
+ * artefact would be a supply-chain hole rather than a convenience.
+ *
+ * @throws if the platform is unsupported, the download fails, or the digest
+ *         does not match.
+ */
 export function installAtuin(
   version: string = defaultAtuinVersion(),
   onProgress: (p: InstallProgress) => void = () => {}
@@ -163,7 +163,20 @@ async function performInstall(
   if (!binRes.ok) {
     throw new Error(`Download failed for atuin v${version} (${binRes.status}).`);
   }
+  // Bounded before buffering: the response is read fully into memory, and an
+  // unexpected redirect to something enormous would otherwise be an
+  // out-of-memory crash rather than an error message. The real asset is ~40MB.
+  const MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024;
+  const declared = Number(binRes.headers.get("content-length") ?? "0");
+  if (declared > MAX_DOWNLOAD_BYTES) {
+    throw new Error(
+      `Refusing to download ${declared} bytes for ${asset}: over the ${MAX_DOWNLOAD_BYTES}-byte limit.`
+    );
+  }
   const bytes = new Uint8Array(await binRes.arrayBuffer());
+  if (bytes.byteLength > MAX_DOWNLOAD_BYTES) {
+    throw new Error(`Downloaded ${asset} exceeded the ${MAX_DOWNLOAD_BYTES}-byte limit.`);
+  }
 
   onProgress({ step: "verifying", detail: "sha256" });
   const actual = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
