@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { TransactionRollbackError } from "drizzle-orm";
 import { UserStore } from "../stores/user-store";
 import { SessionStore } from "../stores/session-store";
 import { StatsStore } from "../stores/stats-store";
@@ -514,8 +515,11 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       let outcome: Awaited<ReturnType<typeof UserStore.delete>>;
       try {
         outcome = await UserStore.delete(params.id, body?.expectedScope);
-      } catch {
-        // tx.rollback() throws by design; the scope moved under the preview.
+      } catch (err) {
+        // Only the deliberate rollback means "the scope moved". Catching every
+        // error here would report a genuine database failure as a stale
+        // preview and invite the operator to simply confirm again.
+        if (!(err instanceof TransactionRollbackError)) throw err;
         set.status = 409;
         const fresh = await UserStore.deletePreview(params.id);
         return {

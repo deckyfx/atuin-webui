@@ -69,8 +69,26 @@ export async function postJson<T>(
   return parse<T>(res, options);
 }
 
-export async function deleteJson<T>(url: string, options?: JsonOptions): Promise<T> {
-  return parse<T>(await fetch(url, { method: "DELETE", signal: options?.signal }), options);
+/**
+ * DELETE, optionally with a body.
+ *
+ * A body on DELETE is unusual but deliberate here: destructive endpoints take
+ * the scope the caller confirmed against, so the server can refuse when it no
+ * longer matches.
+ */
+export async function deleteJson<T>(
+  url: string,
+  body?: unknown,
+  options?: JsonOptions
+): Promise<T> {
+  const res = await fetch(url, {
+    method: "DELETE",
+    ...(body === undefined
+      ? {}
+      : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+    signal: options?.signal,
+  });
+  return parse<T>(res, options);
 }
 
 /** Narrows an unknown error to a message worth showing. */

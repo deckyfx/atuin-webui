@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { getJson, deleteJson, errorMessage, isArray, hasNumber } from "../lib/http";
+import { getJson, deleteJson, errorMessage, isArray, hasNumber, HttpError } from "../lib/http";
 import { formatServerLocal } from "../lib/datetime";
 interface User {
   id: number;
@@ -65,13 +65,28 @@ export function UsersPage() {
       }
       return;
     }
+    // Confirmed against a specific preview, so send it: the server recomputes
+    // the counts inside the transaction and refuses if the account grew.
+    const confirmedScope = deletePreview;
     setDeleting(userId);
     setConfirmDelete(null);
     setDeleteError(null);
     try {
-      await deleteJson(`/api/users/${userId}`);
+      await deleteJson(
+        `/api/users/${userId}`,
+        confirmedScope ? { expectedScope: confirmedScope } : undefined
+      );
       setUsers((prev) => prev.filter((u) => u.id !== userId));
     } catch (err) {
+      if (err instanceof HttpError && err.status === 409) {
+        // Not a failure: the scope moved between preview and confirm. Show the
+        // new numbers and ask again rather than reporting an error.
+        const fresh = (err.body as { preview?: { sessions: number; records: number } })?.preview;
+        setDeletePreview(fresh ?? null);
+        setConfirmDelete(fresh ? userId : null);
+        setDeleteError(errorMessage(err, "This account changed since it was previewed"));
+        return;
+      }
       // Per-row, not page-level: replacing the table with an error screen
       // hides the very list the user was working in.
       setDeleteError(errorMessage(err, "Failed to delete user"));
