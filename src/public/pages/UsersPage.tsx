@@ -49,7 +49,9 @@ export function UsersPage() {
       try {
         const preview = await getJson<{ sessions: number; records: number }>(
           `/api/users/${userId}/delete-preview`,
-          { expect: hasNumber("records") }
+          // Both counts: `records` alone let a response without `sessions`
+          // enable "Yes, delete" and render an undefined session count.
+          { expect: hasNumber("records", "sessions") }
         );
         // Bound to this request: a response for user A arriving after the
         // operator moved to user B would otherwise fill B's confirmation with
@@ -68,14 +70,17 @@ export function UsersPage() {
     // Confirmed against a specific preview, so send it: the server recomputes
     // the counts inside the transaction and refuses if the account grew.
     const confirmedScope = deletePreview;
+    if (!confirmedScope) {
+      // Unreachable through the UI (the button is disabled without a preview),
+      // but the request must never be sent without the scope it displayed.
+      setDeleteError("Preview the deletion scope before confirming.");
+      return;
+    }
     setDeleting(userId);
     setConfirmDelete(null);
     setDeleteError(null);
     try {
-      await deleteJson(
-        `/api/users/${userId}`,
-        confirmedScope ? { expectedScope: confirmedScope } : undefined
-      );
+      await deleteJson(`/api/users/${userId}`, { expectedScope: confirmedScope });
       setUsers((prev) => prev.filter((u) => u.id !== userId));
     } catch (err) {
       if (err instanceof HttpError && err.status === 409) {

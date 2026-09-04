@@ -514,7 +514,7 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
     async ({ params, body, set }) => {
       let outcome: Awaited<ReturnType<typeof UserStore.delete>>;
       try {
-        outcome = await UserStore.delete(params.id, body?.expectedScope);
+        outcome = await UserStore.delete(params.id, body.expectedScope);
       } catch (err) {
         // Only the deliberate rollback means "the scope moved". Catching every
         // error here would report a genuine database failure as a stale
@@ -536,16 +536,16 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
     // t.Numeric rejects "12abc" and "" outright; parseInt accepted both.
     {
       params: t.Object({ id: t.Numeric() }),
-      // Optional so an operator with curl can still delete, but the UI always
-      // sends what it showed: sessions and records added between preview and
-      // confirm would otherwise be deleted without ever being displayed.
-      body: t.Optional(
-        t.Object({
-          expectedScope: t.Optional(
-            t.Object({ sessions: t.Integer(), records: t.Integer() })
-          ),
-        })
-      ),
+      // Required. An optional scope is not a guard: omitting it skipped the
+      // transaction-time recheck entirely and deleted the account, its
+      // sessions and every synced record with nothing previewed. Callers
+      // outside the UI must preview first too.
+      body: t.Object({
+        expectedScope: t.Object({
+          sessions: t.Integer({ minimum: 0 }),
+          records: t.Integer({ minimum: 0 }),
+        }),
+      }),
     }
   )
   .get("/sessions", async () => await SessionStore.findAll())

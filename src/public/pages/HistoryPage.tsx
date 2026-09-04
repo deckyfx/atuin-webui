@@ -90,7 +90,7 @@ export function HistoryPage() {
           // new filters would show a selection that does not match what the
           // filters describe — and selection drives deletion.
           setData(null);
-          setSelected(new Set());
+          changeSelection(() => new Set());
           push("error", errorMessage(err, "Failed to load history."));
         })
         .finally(() => {
@@ -103,28 +103,49 @@ export function HistoryPage() {
     };
   }, [search, host, offset, reloadKey]);
 
-  const toggle = useCallback((command: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(command)) next.delete(command);
-      else next.add(command);
-      return next;
-    });
-    setConfirming(false);
-  }, []);
+  /**
+   * Every selection change goes through here.
+   *
+   * Changing the selection invalidates any preview describing the old one: a
+   * pending response would otherwise arm the confirm with a count for commands
+   * the user has already deselected, and the delete sends `previewedCommands`.
+   * Bumping the sequence here means no caller can forget to.
+   */
+  const changeSelection = useCallback(
+    (update: (prev: Set<string>) => Set<string>) => {
+      previewSeq.current += 1;
+      setSelected(update);
+      setConfirming(false);
+      setBatchPreview(null);
+      setPreviewedCommands([]);
+      setBusy(false);
+    },
+    []
+  );
+
+  const toggle = useCallback(
+    (command: string) => {
+      changeSelection((prev) => {
+        const next = new Set(prev);
+        if (next.has(command)) next.delete(command);
+        else next.add(command);
+        return next;
+      });
+    },
+    [changeSelection]
+  );
 
   const pageCommands = [...new Set(data?.rows.map((r) => r.command) ?? [])];
   const allSelected = pageCommands.length > 0 && pageCommands.every((c) => selected.has(c));
   const someSelected = pageCommands.some((c) => selected.has(c));
 
   function toggleAll() {
-    setSelected((prev) => {
+    changeSelection((prev) => {
       const next = new Set(prev);
       if (allSelected) pageCommands.forEach((c) => next.delete(c));
       else pageCommands.forEach((c) => next.add(c));
       return next;
     });
-    setConfirming(false);
   }
 
   async function previewBatch() {
@@ -172,10 +193,7 @@ export function HistoryPage() {
         push("success", `Deleted ${body.deleted} command${body.deleted === 1 ? "" : "s"}.`);
       }
 
-      setSelected(new Set());
-      setConfirming(false);
-      setBatchPreview(null);
-      setPreviewedCommands([]);
+      changeSelection(() => new Set());
       // Back to the first page: deleting can shrink the result set past the
       // current offset, which would otherwise render an empty table that looks
       // like "no matching commands".
@@ -280,10 +298,7 @@ export function HistoryPage() {
             </>
           )}
           <button
-            onClick={() => {
-              setSelected(new Set());
-              setConfirming(false);
-            }}
+            onClick={() => changeSelection(() => new Set())}
             aria-label="Clear selection"
             className="rounded-md p-1 text-ink-subtle hover:text-ink"
           >
@@ -391,7 +406,7 @@ export function HistoryPage() {
                     <td className="px-2 py-2.5 text-right">
                       <button
                         onClick={() => {
-                          setSelected(new Set([row.command]));
+                          changeSelection(() => new Set([row.command]));
                           setConfirming(false);
                           setBatchPreview(null);
                         }}

@@ -22,3 +22,22 @@ describe("timestamp contracts", () => {
     );
   });
 });
+
+describe("calendar validation", () => {
+  test("a rolled-over date is rejected, not silently shifted", () => {
+    // new Date("2026-02-30") yields March 2. Without a round-trip check the
+    // formatter shows a plausible but wrong date instead of the raw text.
+    expect(formatUtc("2026-02-30 00:00:00")).toBe("2026-02-30 00:00:00");
+    expect(formatServerLocal("2026-02-30 00:00:00")).toBe("2026-02-30 00:00:00");
+  });
+
+  test("out-of-range components are rejected", () => {
+    for (const bad of ["2026-13-01 00:00:00", "2026-01-32 00:00:00", "2026-01-01 25:00:00"]) {
+      expect(formatUtc(bad)).toBe(bad);
+    }
+  });
+
+  test("a real leap day still formats", () => {
+    expect(formatUtc("2028-02-29 12:00:00")).not.toBe("2028-02-29 12:00:00");
+  });
+});

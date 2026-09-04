@@ -18,15 +18,20 @@ shift
 # anywhere on the filesystem — including the real one.
 # `case` matches the whole string; grep is line-oriented and would accept
 # $'safe\n../../etc', letting the second line escape $ROOT/clients.
+# Rejected inside the branches rather than by setting a flag the caller could
+# pre-seed: `valid=1 ./atuin-sandbox.sh ../evil` exports valid into this
+# script's environment, and reading it afterwards let an invalid profile
+# through.
 case "$PROFILE" in
-  "" | "." | "..") ;;
-  *[!A-Za-z0-9._-]*) ;;
-  *) valid=1 ;;
+  "" | "." | "..")
+    printf 'Invalid profile name: empty, "." and ".." are not profiles\n' >&2
+    exit 1
+    ;;
+  *[!A-Za-z0-9._-]*)
+    printf 'Invalid profile name (letters, digits, dot, dash, underscore only)\n' >&2
+    exit 1
+    ;;
 esac
-if [ "${valid:-0}" -ne 1 ]; then
-  printf 'Invalid profile name (letters, digits, dot, dash, underscore only)\n' >&2
-  exit 1
-fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROFILE_DIR="$ROOT/clients/$PROFILE"

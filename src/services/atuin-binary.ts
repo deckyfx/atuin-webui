@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { chmod, mkdir, rm } from "node:fs/promises";
+import { chmod, mkdir, rename, rm } from "node:fs/promises";
 import { envConfig } from "../env-config";
 
 /** Release fetched when none is installed; overridable via ATUIN_VERSION. */
@@ -93,9 +93,32 @@ export interface InstallProgress {
  * @throws if the platform is unsupported, the download fails, or the digest
  *         does not match.
  */
-export async function installAtuin(
+/**
+ * Serialises installs within this process.
+ *
+ * The install route is reachable over HTTP, so two requests can overlap. Even
+ * with the atomic rename, concurrent runs would download and extract the same
+ * archive twice for no benefit; chaining them makes the second wait and then
+ * observe the first one's result.
+ */
+let installChain: Promise<unknown> = Promise.resolve();
+
+export function installAtuin(
   version: string = defaultAtuinVersion(),
   onProgress: (p: InstallProgress) => void = () => {}
+): Promise<{ path: string; version: string }> {
+  const run = installChain.then(
+    () => performInstall(version, onProgress),
+    () => performInstall(version, onProgress)
+  );
+  // The chain must not reject, or every later install inherits the failure.
+  installChain = run.catch(() => undefined);
+  return run;
+}
+
+async function performInstall(
+  version: string,
+  onProgress: (p: InstallProgress) => void
 ): Promise<{ path: string; version: string }> {
   const target = resolveTarget();
   if (!target) {
@@ -183,8 +206,21 @@ export async function installAtuin(
     if (!(await extracted.exists())) {
       throw new Error("Archive did not contain an `atuin` binary.");
     }
-    await Bun.write(dest, extracted);
-    await chmod(dest, 0o755);
+
+    // Staged beside the destination, then renamed. Writing straight to `dest`
+    // is not atomic: a 39MB copy leaves the file truncated for most of its
+    // duration, and any CLI call landing in that window executes a partial
+    // binary. rename(2) within one filesystem is atomic, so readers see either
+    // the old file or the complete new one.
+    const staged = `${dest}.incoming-${process.pid}-${Date.now().toString(36)}`;
+    try {
+      await Bun.write(staged, extracted);
+      await chmod(staged, 0o755);
+      await rename(staged, dest);
+    } catch (err) {
+      await rm(staged, { force: true });
+      throw err;
+    }
   } finally {
     await rm(workDir, { recursive: true, force: true });
   }

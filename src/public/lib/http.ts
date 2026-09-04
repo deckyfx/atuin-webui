@@ -103,6 +103,10 @@ export function isAbort(err: unknown): boolean {
 
 export const isArray = (v: unknown): v is unknown[] => Array.isArray(v);
 export const hasNumber =
-  (key: string) =>
-  (v: unknown): boolean =>
-    typeof (v as Record<string, unknown> | null)?.[key] === "number";
+  (...keys: string[]) =>
+  (v: unknown): boolean => {
+    const o = v as Record<string, unknown> | null;
+    // Every named key: checking one field of a multi-field payload lets the
+    // rest arrive undefined and reach the UI as "undefined session(s)".
+    return keys.every((k) => typeof o?.[k] === "number");
+  };

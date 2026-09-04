@@ -87,23 +87,22 @@ export class UserStore {
   /**
    * Deletes a user and everything belonging to them.
    *
-   * When `expectedScope` is given, the counts are recomputed inside the same
+   * `expectedScope` is required: the counts are recomputed inside the same
    * transaction and the delete is refused if they moved. The preview shows an
    * operator how much data this destroys; sessions or records created between
    * that preview and the confirmation would otherwise be deleted without ever
-   * having been displayed.
+   * having been displayed. Making it optional made the check skippable by
+   * omission, which is the same as not having it.
    */
   static async delete(
     userId: number,
-    expectedScope?: { sessions: number; records: number }
+    expectedScope: { sessions: number; records: number }
   ): Promise<"deleted" | "not-found" | "scope-changed"> {
     return getServerDb().transaction((tx) => {
-      if (expectedScope) {
-        const [s] = tx.select({ c: count() }).from(sessions).where(eq(sessions.userId, userId)).all();
-        const [r] = tx.select({ c: count() }).from(store).where(eq(store.userId, userId)).all();
-        if ((s?.c ?? 0) !== expectedScope.sessions || (r?.c ?? 0) !== expectedScope.records) {
-          tx.rollback();
-        }
+      const [s] = tx.select({ c: count() }).from(sessions).where(eq(sessions.userId, userId)).all();
+      const [r] = tx.select({ c: count() }).from(store).where(eq(store.userId, userId)).all();
+      if ((s?.c ?? 0) !== expectedScope.sessions || (r?.c ?? 0) !== expectedScope.records) {
+        tx.rollback();
       }
       tx.delete(sessions).where(eq(sessions.userId, userId)).run();
       tx.delete(store).where(eq(store.userId, userId)).run();
