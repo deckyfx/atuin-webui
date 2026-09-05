@@ -30,8 +30,10 @@ export { migrationError };
 // is unreachable from the host.
 if (!envConfig.IS_LOOPBACK_HOST && !envConfig.ALLOW_PUBLIC_BIND) {
   console.error(
-    `Refusing to listen on ${envConfig.HOST}: every endpoint is unauthenticated.\n` +
-      `Put authentication in front of it, then set ALLOW_PUBLIC_BIND=1 to confirm.`
+    `Refusing to listen on ${envConfig.HOST}.\n` +
+      `The API is token-gated, but off-host it needs TLS in front — otherwise the ` +
+      `token crosses the network in cleartext and nothing will authenticate.\n` +
+      `Put a TLS-terminating proxy in front, then set ALLOW_PUBLIC_BIND=1 to confirm.`
   );
   process.exit(1);
 }
@@ -47,8 +49,10 @@ console.log(`Atuin Dashboard running at ${startupUrl()}`);
 console.log(`Token file: ${tokenPath()} (mode 0600)`);
 if (!envConfig.IS_LOOPBACK_HOST) {
   console.warn(
-    `⚠️  Listening on ${envConfig.HOST} with ALLOW_PUBLIC_BIND set: every endpoint ` +
-      `is unauthenticated and can delete history on every synced machine.`
+    `⚠️  Listening on ${envConfig.HOST} with ALLOW_PUBLIC_BIND set. The API ` +
+      `requires a token, and off-host it is refused unless the request arrives ` +
+      `over TLS — directly or via a proxy setting X-Forwarded-Proto: https. ` +
+      `Without that proxy nothing will authenticate.`
   );
 }
 

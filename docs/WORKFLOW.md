@@ -138,20 +138,24 @@ cat ~/.local/share/atuin-dashboard/api-token
 docker compose exec atuin-dashboard cat /config/dashboard/api-token
 ```
 
-A non-loopback bind does not print the token at all: sending it over plain
-HTTP off-host would expose it on the wire, so put TLS in front and read the
-file directly.
+A non-loopback bind does not print the token at all, and refuses token
+authentication entirely unless the request arrived over TLS — directly, or via
+a proxy that sets `X-Forwarded-Proto: https`. `Secure` keeps the cookie off a
+cleartext hop, but the header and `?token=` forms would still put the token on
+the wire, and a captured token is as good as the file it came from. So put TLS
+in front and read the file directly.
 
 Scripts can send it as a header instead. Read it from the file rather than
 interpolating it into the command — `$(cat …)` expands before `curl` runs, so
 the token lands in the process arguments where any local process can read it:
 
 ```bash
-# The token is in a header file, never in argv.
-printf 'X-Dashboard-Token: %s\n' "$(cat ~/.local/share/atuin-dashboard/api-token)" \
-  > /dev/shm/atuin-hdr && chmod 600 /dev/shm/atuin-hdr
-curl -H @/dev/shm/atuin-hdr http://127.0.0.1:3001/api/client/overview
-rm -f /dev/shm/atuin-hdr
+# mktemp creates the file with 0600 already set, and the trap removes it even
+# if curl fails. Creating a predictable path and chmod-ing afterwards leaves a
+# window in which another local account can read the token.
+hdr=$(mktemp) && trap 'rm -f "$hdr"' EXIT
+printf 'X-Dashboard-Token: %s\n' "$(cat ~/.local/share/atuin-dashboard/api-token)" > "$hdr"
+curl -H @"$hdr" http://127.0.0.1:3001/api/client/overview
 ```
 
 In a container the token lives in the config volume instead:

@@ -52,7 +52,17 @@ export function PrunePage() {
   // after previewing would otherwise delete something never shown.
   const [previewedRule, setPreviewedRule] = useState<SearchRule | null>(null);
   const [previewedVerbs, setPreviewedVerbs] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
+  /**
+   * Two flags, not one.
+   *
+   * A single `busy` meant a chip click could clear the flag while a delete was
+   * still in flight, re-enabling the confirm and allowing a second
+   * /api/prune/execute for the same rule. Selection changes settle only the
+   * preview; a mutation clears its own.
+   */
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const [mutating, setMutating] = useState(false);
+  const busy = previewBusy || mutating;
   const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
@@ -77,7 +87,10 @@ export function PrunePage() {
     setVerbPreview(null);
     setVerbConfirming(false);
     setPreviewedVerbs([]);
-    setBusy(false);
+    // Only the preview. Clearing a shared flag here re-enabled a confirmed
+    // delete that was still in flight, which allowed a second execute for the
+    // same rule.
+    setPreviewBusy(false);
   }, []);
   const [dedupPreview, setDedupPreview] = useState<DedupPreview | null>(null);
 
@@ -103,7 +116,7 @@ export function PrunePage() {
   /** Sends the fingerprint of the scope the user actually saw, so a changed
    *  duplicate set is rejected rather than silently deleted. */
   async function runDedup(expectedFingerprint: string) {
-    setBusy(true);
+    setMutating(true);
     try {
       const body = await postJson<{ output?: string }>("/api/dedup", {
         expectedFingerprint,
@@ -140,12 +153,12 @@ export function PrunePage() {
       setDedupConfirming(false);
       setResult(`Dedup failed: ${errorMessage(err)}`);
     } finally {
-      setBusy(false);
+      setMutating(false);
     }
   }
 
   async function previewDedup() {
-    setBusy(true);
+    setPreviewBusy(true);
     setResult(null);
     try {
       setDedupPreview(
@@ -157,12 +170,12 @@ export function PrunePage() {
     } catch (err) {
       setResult(`Preview failed: ${errorMessage(err)}`);
     } finally {
-      setBusy(false);
+      setPreviewBusy(false);
     }
   }
 
   async function previewVerbs() {
-    setBusy(true);
+    setPreviewBusy(true);
     setResult(null);
     const seq = ++previewSeq.current;
     try {
@@ -184,12 +197,12 @@ export function PrunePage() {
       setResult(`Preview failed: ${errorMessage(err)}`);
       setVerbPreview(null);
     } finally {
-      if (seq === previewSeq.current) setBusy(false);
+      if (seq === previewSeq.current) setPreviewBusy(false);
     }
   }
 
   async function purgeVerbs() {
-    setBusy(true);
+    setMutating(true);
     try {
       if (previewedVerbs.length === 0) return;
       const body = await postJson<{
@@ -209,13 +222,13 @@ export function PrunePage() {
       // happen must never read as one that did.
       setResult(`Purge failed: ${errorMessage(err)}`);
     } finally {
-      setBusy(false);
+      setMutating(false);
     }
   }
 
   async function runPreview() {
     if (!query.trim()) return;
-    setBusy(true);
+    setPreviewBusy(true);
     setResult(null);
     setConfirming(false);
     try {
@@ -231,12 +244,12 @@ export function PrunePage() {
       setResult(`Preview failed: ${errorMessage(err)}`);
       setPreview(null);
     } finally {
-      setBusy(false);
+      setPreviewBusy(false);
     }
   }
 
   async function runDelete() {
-    setBusy(true);
+    setMutating(true);
     try {
       if (!previewedRule) return;
       const body = await postJson<{ output?: string }>("/api/prune/execute", previewedRule);
@@ -249,12 +262,12 @@ export function PrunePage() {
     } catch (err) {
       setResult(`Failed: ${errorMessage(err)}`);
     } finally {
-      setBusy(false);
+      setMutating(false);
     }
   }
 
   async function post(path: string) {
-    setBusy(true);
+    setMutating(true);
     try {
       const body = await postJson<{ output?: string; success?: boolean }>(path);
       setResult(body.output || (body.success ? "Done." : "Failed."));
@@ -262,7 +275,7 @@ export function PrunePage() {
     } catch (err) {
       setResult(errorMessage(err, "Request failed."));
     } finally {
-      setBusy(false);
+      setMutating(false);
     }
   }
 
@@ -284,6 +297,7 @@ export function PrunePage() {
               const available = verbs.filter((v) => NOISE_VERBS.includes(v.verb)).map((v) => v.verb);
               changePicked(new Set(available));
             }}
+            disabled={mutating}
             className="inline-flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink"
           >
             <Sparkles size={13} />
@@ -304,7 +318,10 @@ export function PrunePage() {
                   changePicked(next);
                 }}
                 aria-pressed={on}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs transition-colors ${
+                // Locked while a mutation runs: changing the selection
+                // mid-delete is what let a stale scope reach a live confirm.
+                disabled={mutating}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs transition-colors disabled:opacity-50 ${
                   on
                     ? "border-warn/50 bg-warn-soft text-warn"
                     : "bg-raised border-line text-ink-muted hover:border-brand/40"

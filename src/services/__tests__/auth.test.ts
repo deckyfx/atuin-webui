@@ -49,3 +49,39 @@ describe("api token", () => {
     expect(c).toContain("SameSite=Strict");
   });
 });
+
+describe("off-host requires TLS", () => {
+  test("a public bind rejects a token sent over plain http", async () => {
+    Bun.env.HOST = "0.0.0.0";
+    const { isAuthorised, apiToken } = await import("../auth");
+    const token = apiToken();
+    // The credential is correct; the transport is not. Capturing it off a
+    // cleartext hop is as good as reading the file.
+    expect(
+      isAuthorised(new Request("http://example.test/api/x", {
+        headers: { "x-dashboard-token": token },
+      }))
+    ).toBe(false);
+  });
+
+  test("a public bind accepts the same token behind a TLS proxy", async () => {
+    Bun.env.HOST = "0.0.0.0";
+    const { isAuthorised, apiToken } = await import("../auth");
+    const token = apiToken();
+    expect(
+      isAuthorised(new Request("http://example.test/api/x", {
+        headers: { "x-dashboard-token": token, "x-forwarded-proto": "https" },
+      }))
+    ).toBe(true);
+  });
+
+  test("loopback still works over plain http", async () => {
+    Bun.env.HOST = "127.0.0.1";
+    const { isAuthorised, apiToken } = await import("../auth");
+    expect(
+      isAuthorised(new Request("http://127.0.0.1:3001/api/x", {
+        headers: { "x-dashboard-token": apiToken() },
+      }))
+    ).toBe(true);
+  });
+});

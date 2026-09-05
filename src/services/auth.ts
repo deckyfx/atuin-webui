@@ -60,13 +60,29 @@ function matches(candidate: string): boolean {
 }
 
 /**
+ * Whether this request reached us over TLS.
+ *
+ * Direct TLS shows in the URL; behind a terminating proxy it shows in
+ * X-Forwarded-Proto. The header is only trusted off-host, where a proxy is the
+ * expected deployment — on loopback nothing is in front to set it.
+ */
+function overTls(request: Request): boolean {
+  if (new URL(request.url).protocol === "https:") return true;
+  const forwarded = request.headers.get("x-forwarded-proto");
+  return forwarded?.split(",")[0]?.trim().toLowerCase() === "https";
+}
+
+/**
  * Whether a request carries the token.
  *
- * Three ways in, in order of how a caller is most likely to have it:
- * the session cookie the app sets, an explicit header for scripts, and the
- * `?token=` query used once to establish the cookie.
+ * Off-host without TLS, no credential is accepted at all. `Secure` keeps the
+ * cookie off a cleartext hop, but the header and `?token=` forms would still
+ * put the token on the wire for a passive observer, and a token that has been
+ * captured is as good as the file it came from.
  */
 export function isAuthorised(request: Request): boolean {
+  if (!envConfig.IS_LOOPBACK_HOST && !overTls(request)) return false;
+
   const header = request.headers.get("x-dashboard-token");
   if (header && matches(header.trim())) return true;
 
