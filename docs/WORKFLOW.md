@@ -161,7 +161,10 @@ tokfile="${DASHBOARD_CONFIG_DIR:-$HOME/.local/share/atuin-dashboard}/api-token"
 # if curl fails. Creating a predictable path and chmod-ing afterwards leaves a
 # window in which another local account can read the token.
 hdr=$(mktemp) && trap 'rm -f "$hdr"' EXIT
-printf 'X-Dashboard-Token: %s\n' "$(cat "$tokfile")" > "$hdr"
+# The token goes file-to-file and is never an argument: printf '%s' "$(cat …)"
+# expands it into the argument list first, where /proc exposes it for the
+# life of the command.
+{ printf 'X-Dashboard-Token: '; cat "$tokfile"; } > "$hdr"
 curl -H @"$hdr" http://127.0.0.1:3001/api/client/overview
 ```
 
@@ -171,7 +174,7 @@ set:
 ```bash
 docker compose exec atuin-dashboard sh -c '
   hdr=$(mktemp) && trap "rm -f $hdr" EXIT
-  printf "X-Dashboard-Token: %s\\n" "$(cat "$DASHBOARD_CONFIG_DIR/api-token")" > "$hdr"
+  { printf "X-Dashboard-Token: "; cat "$DASHBOARD_CONFIG_DIR/api-token"; } > "$hdr"
   curl -H @"$hdr" http://127.0.0.1:3001/api/client/overview'
 ```
 
