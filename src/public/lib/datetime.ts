@@ -39,10 +39,15 @@ function parse(value: string, asUtc: boolean): Date | null {
   const d = new Date(asUtc ? `${iso}Z` : iso);
   if (Number.isNaN(d.getTime())) return null;
 
-  // Round-trip check: a rolled-over date no longer reports the day it was given.
-  const gotDay = asUtc ? d.getUTCDate() : d.getDate();
-  const gotMonth = (asUtc ? d.getUTCMonth() : d.getMonth()) + 1;
-  return gotDay === day && gotMonth === mo ? d : null;
+  // Round-trip every component, not just the date. A local time inside a DST
+  // gap — 02:30 on a spring-forward morning — does not exist, and `new Date`
+  // rolls it to 03:30 rather than failing. Checking only day and month would
+  // accept that and display an hour the input never named.
+  const got = asUtc
+    ? [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()]
+    : [d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()];
+  const want = [y, mo, day, h, min, sec];
+  return got.every((v, i) => v === want[i]) ? d : null;
 }
 
 /** Renders a UTC timestamp in the viewer's zone. */

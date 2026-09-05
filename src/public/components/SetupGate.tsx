@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { LogIn, KeyRound, Download } from "lucide-react";
-import { getJson, postJson, errorMessage } from "../lib/http";
+import { getJson, postJson, errorMessage, HttpError } from "../lib/http";
 
 interface SetupStatus {
   profile: string;
@@ -30,6 +30,7 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [unauthorised, setUnauthorised] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
   // Retry can start concurrent requests; only the newest may write state, or a
@@ -48,6 +49,14 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
       // cleared it rendered a permanently blank page with no explanation.
       .catch((err) => {
         if (seq !== requestSeq.current) return;
+        // 401 is a distinct state, not a transport failure: the shell loaded
+        // fine, the caller simply has no token. It gets its own screen with
+        // the remedy rather than "cannot reach the API", which is misleading.
+        if (err instanceof HttpError && err.status === 401) {
+          setUnauthorised(true);
+          setLoadError(null);
+          return;
+        }
         setLoadError(errorMessage(err));
       });
   };
@@ -87,6 +96,34 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
     } finally {
       setInstalling(false);
     }
+  }
+
+  // 401 is not a transport failure: the app shell loads for anyone, but the
+  // data does not, so an unauthorised visitor sees an explanation rather than
+  // a dashboard that silently shows nothing.
+  if (unauthorised) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-8">
+        <div className="max-w-lg">
+          <h1 className="text-2xl font-bold text-ink mb-2 flex items-center gap-2">
+            <KeyRound size={20} className="text-warn" />
+            Token required
+          </h1>
+          <p className="text-ink-muted text-sm">
+            This dashboard reads your shell history and can delete it on every
+            synced machine, so the API requires a token. Loopback alone does not
+            keep other accounts on this machine out.
+          </p>
+          <p className="text-ink-muted text-sm mt-3">
+            Open the URL printed when the server started, or read the token and
+            visit <code className="font-mono">/auth?token=&lt;token&gt;</code>:
+          </p>
+          <pre className="mt-3 rounded-lg border border-line bg-raised p-3 text-xs font-mono text-ink-muted overflow-x-auto">
+            cat ~/.local/share/atuin-dashboard/api-token
+          </pre>
+        </div>
+      </div>
+    );
   }
 
   if (loadError) {

@@ -25,7 +25,9 @@ import type { PruneAuditRow, NewPruneAudit } from "../db/app-schema";
  */
 const VALUE = String.raw`(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|(?:\\.|\S)+)`;
 
-const REDACTIONS: Array<[RegExp, string]> = [
+type Replacement = string | ((substring: string, ...args: string[]) => string);
+
+const REDACTIONS: Array<[RegExp, Replacement]> = [
   // --password=… / --token … / -p …
   // `(?:=|\s+)` rather than `[=\s]`: a single-character class matched exactly
   // one separator, so `--password   secret` — aligned columns, or a pasted
@@ -40,6 +42,10 @@ const REDACTIONS: Array<[RegExp, string]> = [
   // secrets and whose loss makes the log harder to read.
   [new RegExp(String.raw`\b([A-Za-z0-9_]*(?:token|secret|password|passwd|api_?key|auth_?token|authorization|bearer_?token)[A-Za-z0-9_]*=)${VALUE}`, "gi"),
     "$1«redacted»"],
+  // Credential headers are colon-delimited, not `=`-delimited, so none of the
+  // assignment rules above reach them: `X-API-Key: sk_live_…` went in whole.
+  [new RegExp(String.raw`\b((?:x-)?(?:api[-_]?key|auth[-_]?token|access[-_]?token|session[-_]?token|csrf[-_]?token|private[-_]?token):\s*)[^\s"']+`, "gi"),
+    "$1«redacted»"],
   // Authorization: Bearer …  (often inside a quoted header argument)
   // Bounded to the credential itself: `[^"']+` ran to the end of an unquoted
   // command, so `curl -H Authorization: Bearer abc https://x` lost the URL too.
@@ -47,7 +53,12 @@ const REDACTIONS: Array<[RegExp, string]> = [
     "$1«redacted»"],
   // MySQL-style attached password: -pSECRET. Anchored to a token start so it
   // cannot fire mid-word (a path like "dump-pending" is not a password).
-  [new RegExp(String.raw`(^|\s)(-p)(?=\S)${VALUE}`, "g"), "$1$2«redacted»"],
+  // Both forms: `-pSECRET` and `-p SECRET`. The spaced form catches port
+  // arguments too (`docker run -p 8080:80`), which is deliberate — losing a
+  // port number from an audit entry is a smaller loss than keeping a password
+  // in it, and the two are syntactically identical.
+  [new RegExp(String.raw`(^|\s)(-p)(?:(\s+)|(?=\S))${VALUE}`, "g"),
+    (_m, pre, flag, gap) => `${pre}${flag}${gap ?? ""}«redacted»`],
   // Long opaque blobs: JWTs, hex keys.
   [/\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, "«redacted-jwt»"],
   [/\b[0-9a-f]{40,}\b/gi, "«redacted-hex»"],
@@ -55,7 +66,11 @@ const REDACTIONS: Array<[RegExp, string]> = [
 
 /** Masks likely secrets in a command before it is persisted. */
 export function redactCommand(command: string): string {
-  return REDACTIONS.reduce((acc, [re, to]) => acc.replace(re, to), command);
+  return REDACTIONS.reduce(
+    (acc, [re, to]) =>
+      typeof to === "string" ? acc.replace(re, to) : acc.replace(re, to),
+    command
+  );
 }
 
 /** Recursively redacts every string in a JSON-serialisable value. */

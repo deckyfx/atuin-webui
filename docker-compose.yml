@@ -30,6 +30,8 @@ services:
       # Optional: enables the Users/Sessions/Activity admin pages. Read-only,
       # and the payloads are E2E-encrypted, so it never exposes command text.
       # ATUIN_SERVER_DB_PATH: /srv/atuin/atuin.db
+    # The startup log carries the token URL. `docker compose logs atuin-dashboard`
+    # is how an operator gets it; the token file lives in the config volume.
     volumes:
       # Bind mounts, so the client's databases and the downloaded binary are
       # inspectable from the host during development. The image runs as uid

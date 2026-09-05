@@ -70,6 +70,55 @@ export interface CommandResult {
  */
 const COMMAND_TIMEOUT_MS = 120_000;
 
+/**
+ * Caps on what a single invocation may return.
+ *
+ * A `--cmd-only --print0` listing of an entire history is legitimately large,
+ * so stdout is generous; stderr carries messages, not data.
+ */
+const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
+const MAX_STDERR_BYTES = 256 * 1024;
+
+/**
+ * Reads a stream up to `limit` bytes, then stops.
+ *
+ * Truncation is reported in-band so a caller parsing the output cannot mistake
+ * a cut-short listing for a complete one — which for a preview would mean
+ * showing fewer entries than a delete would remove.
+ */
+async function readCapped(stream: ReadableStream<Uint8Array>, limit: number): Promise<string> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let truncated = false;
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      if (total + value.byteLength > limit) {
+        truncated = true;
+        await reader.cancel();
+        break;
+      }
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  } catch {
+    // Surface whatever arrived; run() decides what a partial read means.
+  }
+
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  const text = new TextDecoder().decode(out);
+  return truncated ? `${text}\n[output truncated at ${limit} bytes]` : text;
+}
+
 export class AtuinCli {
   /**
    * Environment that pins the binary to the configured profile.
@@ -152,9 +201,12 @@ export class AtuinCli {
     let stderr = "";
     let exitCode: number;
     try {
+      // Bounded reads. A broad search returns the whole history — thousands of
+      // commands — and `Response.text()` would materialise all of it. The
+      // timeout caps how long a command runs, not how much it can produce.
       [stdout, stderr] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
+        readCapped(proc.stdout, MAX_OUTPUT_BYTES),
+        readCapped(proc.stderr, MAX_STDERR_BYTES),
       ]);
       exitCode = await proc.exited;
     } catch (err) {

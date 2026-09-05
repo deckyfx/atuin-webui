@@ -50,12 +50,14 @@ describe("redactCommand", () => {
     expect(redactCommand(cmd)).toBe(cmd);
   });
 
-  test("leaves a detached -p argument alone", () => {
-    // The attached-password rule requires no space, so `docker run -p 8080:80`
-    // keeps its port mapping. Tools that take a password this way (mysql, psql)
-    // attach it, which is the form that is matched.
-    const cmd = "docker run -p 8080:80 img";
-    expect(redactCommand(cmd)).toBe(cmd);
+  test("redacts a detached -p value, accepting port mappings as collateral", () => {
+    // `-p secret` and `-p 8080:80` are syntactically identical, so covering the
+    // password form necessarily catches the port form. Losing a port number
+    // from an audit entry is the cheaper of the two mistakes.
+    expect(redactCommand("mysql -p SPACED")).not.toContain("SPACED");
+    expect(redactCommand("docker run -p 8080:80 img")).not.toContain("8080");
+    // The rest of the command survives.
+    expect(redactCommand("docker run -p 8080:80 img")).toContain("img");
   });
 
   test("redacts an attached -p password", () => {
@@ -133,4 +135,19 @@ test("redacts a value separated by multiple spaces", () => {
   // pasted commands kept their secrets.
   expect(redactCommand("login --password   hunter2")).not.toContain("hunter2");
   expect(redactCommand("deploy --token\t\tabc123")).not.toContain("abc123");
+});
+
+test("XDG derivation refuses a data dir that would split reads from writes", async () => {
+  // atuin derives its data dir as XDG_DATA_HOME/atuin, so a client dir with a
+  // different last segment makes the CLI write somewhere the dashboard is not
+  // reading. Guarded rather than silently divergent.
+  const prev = Bun.env.ATUIN_CLIENT_DATA_DIR;
+  Bun.env.ATUIN_CLIENT_DATA_DIR = "/custom/path";
+  try {
+    const { envConfig } = await import("../../env-config");
+    expect(() => envConfig.XDG_DATA_HOME).toThrow(/must end in "atuin"/);
+  } finally {
+    if (prev === undefined) delete Bun.env.ATUIN_CLIENT_DATA_DIR;
+    else Bun.env.ATUIN_CLIENT_DATA_DIR = prev;
+  }
 });

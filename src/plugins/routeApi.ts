@@ -11,6 +11,7 @@ import { AuditStore } from "../stores/audit-store";
 import { Doctor } from "../services/doctor";
 import { installAtuin } from "../services/atuin-binary";
 import { envConfig } from "../env-config";
+import { isAuthorised } from "../services/auth";
 
 /** Body schema for a batch-selection rule. Mirrors {@link SearchRule}. */
 /**
@@ -54,6 +55,15 @@ const ruleSchema = t.Object({
 });
 
 export const apiPlugin = new Elysia({ prefix: "/api" })
+  // Every route behind the token. Loopback is not an authorisation boundary:
+  // another local account can reach 127.0.0.1, and these endpoints read
+  // command text containing credentials and delete history on every synced
+  // machine.
+  .onBeforeHandle(({ request, set }) => {
+    if (isAuthorised(request)) return;
+    set.status = 401;
+    return { message: "Unauthorised: supply the dashboard token." };
+  })
   // A machine without atuin set up is an expected deployment state (a fresh
   // container on first boot), not a server fault: report it as 503 with the
   // remedy rather than a stack trace.

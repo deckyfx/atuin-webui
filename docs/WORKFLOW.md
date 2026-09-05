@@ -110,3 +110,32 @@ dependency change is exactly what a reviewer should see — reviewing them produ
 than findings.
 
 Validate changes to that file with `coderabbit config validate`.
+
+## Access token
+
+The API requires a token. Loopback is not an authorisation boundary — every
+local account can reach `127.0.0.1`, and these endpoints read command text
+containing credentials and delete history on every synced machine.
+
+The server prints a ready-made URL on startup:
+
+```text
+Atuin Dashboard running at http://127.0.0.1:3001/auth?token=<token>
+```
+
+Opening it exchanges the token for an `HttpOnly` session cookie and redirects
+to `/`, so the token does not linger in the address bar or browser history.
+
+The token lives in a `0600` file, which is what actually keeps other local
+accounts out:
+
+```bash
+cat ~/.local/share/atuin-dashboard/api-token
+```
+
+Scripts can send it as a header instead:
+
+```bash
+curl -H "X-Dashboard-Token: $(cat ~/.local/share/atuin-dashboard/api-token)" \
+  http://127.0.0.1:3001/api/client/overview
+```

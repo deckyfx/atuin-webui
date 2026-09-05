@@ -3,6 +3,7 @@ import { apiPlugin } from "./plugins/routeApi";
 import { appPlugin } from "./plugins/routeApp";
 import { envConfig } from "./env-config";
 import { Migrator } from "./db/migrator";
+import { startupUrl, tokenPath } from "./services/auth";
 
 // Bring the dashboard's own database up to date before serving.
 //
@@ -40,9 +41,10 @@ const app = new Elysia()
   .use(appPlugin)
   .listen({ hostname: envConfig.HOST, port: envConfig.PORT });
 
-console.log(
-  `Atuin Dashboard running at http://${envConfig.HOST}:${envConfig.PORT}`
-);
+// The token is in the URL because that is the only place the owning user
+// reliably sees it; the visit exchanges it for a cookie and drops it.
+console.log(`Atuin Dashboard running at ${startupUrl()}`);
+console.log(`Token file: ${tokenPath()} (mode 0600)`);
 if (!envConfig.IS_LOOPBACK_HOST) {
   console.warn(
     `⚠️  Listening on ${envConfig.HOST} with ALLOW_PUBLIC_BIND set: every endpoint ` +

@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 /** Which atuin client profile the dashboard drives. */
 export type AtuinProfile = "live" | "sandbox";
@@ -78,7 +78,20 @@ class EnvConfig {
   /** XDG_DATA_HOME to hand the binary so it resolves CLIENT_DATA_DIR.
    *  See atuin crates/atuin-common/src/utils.rs data_dir(). */
   get XDG_DATA_HOME(): string {
-    return join(this.CLIENT_DATA_DIR, "..");
+    const dir = this.CLIENT_DATA_DIR;
+    // atuin computes its data directory as XDG_DATA_HOME/atuin, so handing it
+    // the parent only works when the last segment *is* "atuin". Otherwise the
+    // dashboard reads one directory while the CLI writes to another —
+    // ATUIN_CLIENT_DATA_DIR=/custom/path would have the dashboard read
+    // /custom/path and every mutation land in /custom/atuin, silently.
+    if (basename(dir) !== "atuin") {
+      throw new Error(
+        `ATUIN_CLIENT_DATA_DIR must end in "atuin" (got ${dir}). ` +
+          `atuin derives its data directory as XDG_DATA_HOME/atuin, so any other ` +
+          `name would point the CLI at a different directory than the dashboard reads.`
+      );
+    }
+    return join(dir, "..");
   }
 
   /** Sync server. Only consulted during bootstrap; afterwards the client's
