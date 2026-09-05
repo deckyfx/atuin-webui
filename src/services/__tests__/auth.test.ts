@@ -64,15 +64,30 @@ describe("off-host requires TLS", () => {
     ).toBe(false);
   });
 
-  test("a public bind accepts the same token behind a TLS proxy", async () => {
+  test("the forwarding header alone does not prove TLS", async () => {
     Bun.env.HOST = "0.0.0.0";
+    delete Bun.env.TRUST_PROXY_HEADERS;
     const { isAuthorised, apiToken } = await import("../auth");
-    const token = apiToken();
+    // Any client can send this header, so on its own it is a claim, not
+    // evidence. Accepting it made the TLS requirement satisfiable by typing
+    // one line — confirmed against a real public bind before this changed.
     expect(
       isAuthorised(new Request("http://example.test/api/x", {
-        headers: { "x-dashboard-token": token, "x-forwarded-proto": "https" },
+        headers: { "x-dashboard-token": apiToken(), "x-forwarded-proto": "https" },
+      }))
+    ).toBe(false);
+  });
+
+  test("a declared proxy makes the header meaningful", async () => {
+    Bun.env.HOST = "0.0.0.0";
+    Bun.env.TRUST_PROXY_HEADERS = "1";
+    const { isAuthorised, apiToken } = await import("../auth");
+    expect(
+      isAuthorised(new Request("http://example.test/api/x", {
+        headers: { "x-dashboard-token": apiToken(), "x-forwarded-proto": "https" },
       }))
     ).toBe(true);
+    delete Bun.env.TRUST_PROXY_HEADERS;
   });
 
   test("loopback still works over plain http", async () => {

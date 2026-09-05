@@ -224,6 +224,18 @@ class EnvConfig {
     return Bun.env.HOST ?? "127.0.0.1";
   }
 
+  /**
+   * Whether a trusted reverse proxy terminates TLS in front of this server.
+   *
+   * X-Forwarded-Proto is set by whoever sends the request, so honouring it
+   * unconditionally lets a direct client claim TLS by typing the header. Only
+   * an operator knows whether something trustworthy is actually in front.
+   */
+  get TRUST_PROXY_HEADERS(): boolean {
+    const raw = Bun.env.TRUST_PROXY_HEADERS;
+    return raw === "1" || raw?.toLowerCase() === "true";
+  }
+
   /** Explicit confirmation required before binding beyond loopback. */
   /** Whether HOST refers to the loopback interface. */
   get IS_LOOPBACK_HOST(): boolean {

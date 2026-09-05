@@ -67,7 +67,15 @@ function matches(candidate: string): boolean {
  * expected deployment — on loopback nothing is in front to set it.
  */
 function overTls(request: Request): boolean {
+  // Direct TLS is self-evident.
   if (new URL(request.url).protocol === "https:") return true;
+
+  // The forwarding header is only evidence when something trusted set it. Any
+  // client can send it, so accepting it unconditionally turned the TLS
+  // requirement into a formality a direct attacker could satisfy by typing one
+  // header — measured against a real public bind before this changed.
+  if (!envConfig.TRUST_PROXY_HEADERS) return false;
+
   const forwarded = request.headers.get("x-forwarded-proto");
   return forwarded?.split(",")[0]?.trim().toLowerCase() === "https";
 }
