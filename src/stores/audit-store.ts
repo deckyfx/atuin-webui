@@ -25,6 +25,16 @@ import type { PruneAuditRow, NewPruneAudit } from "../db/app-schema";
  */
 const VALUE = String.raw`(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|(?:\\.|\S)+)`;
 
+/**
+ * A header value.
+ *
+ * Same quoted forms, but the unquoted branch stops at a quote rather than
+ * consuming it: a header is usually written inside `-H '...'`, so an unquoted
+ * value ends at the closing quote, and swallowing it takes the rest of the
+ * command with it.
+ */
+const HEADER_VALUE = String.raw`(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|[^\s"']+)`;
+
 type Replacement = string | ((substring: string, ...args: string[]) => string);
 
 const REDACTIONS: Array<[RegExp, Replacement]> = [
@@ -44,12 +54,14 @@ const REDACTIONS: Array<[RegExp, Replacement]> = [
     "$1«redacted»"],
   // Credential headers are colon-delimited, not `=`-delimited, so none of the
   // assignment rules above reach them: `X-API-Key: sk_live_…` went in whole.
-  [new RegExp(String.raw`\b((?:x-)?(?:api[-_]?key|auth[-_]?token|access[-_]?token|session[-_]?token|csrf[-_]?token|private[-_]?token):\s*)[^\s"']+`, "gi"),
+  // ${VALUE}, not `[^\s"']+`: excluding quotes meant `X-API-Key: "secret"`
+  // kept the secret, because the pattern stopped at the opening quote.
+  [new RegExp(String.raw`\b((?:x-)?(?:api[-_]?key|auth[-_]?token|access[-_]?token|session[-_]?token|csrf[-_]?token|private[-_]?token):\s*)${HEADER_VALUE}`, "gi"),
     "$1«redacted»"],
   // Authorization: Bearer …  (often inside a quoted header argument)
   // Bounded to the credential itself: `[^"']+` ran to the end of an unquoted
   // command, so `curl -H Authorization: Bearer abc https://x` lost the URL too.
-  [new RegExp(String.raw`(Authorization:\s*(?:Bearer|Basic)\s+)[^\s"']+`, "gi"),
+  [new RegExp(String.raw`(Authorization:\s*(?:Bearer|Basic)\s+)${HEADER_VALUE}`, "gi"),
     "$1«redacted»"],
   // MySQL-style attached password: -pSECRET. Anchored to a token start so it
   // cannot fire mid-word (a path like "dump-pending" is not a password).

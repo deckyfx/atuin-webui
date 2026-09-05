@@ -128,15 +128,34 @@ Opening it exchanges the token for an `HttpOnly` session cookie and redirects
 to `/`, so the token does not linger in the address bar or browser history.
 
 The token lives in a `0600` file, which is what actually keeps other local
-accounts out:
+accounts out. Its path follows `DASHBOARD_CONFIG_DIR`, so it differs between a
+local run and the image:
 
 ```bash
+# local
 cat ~/.local/share/atuin-dashboard/api-token
+# container (DASHBOARD_CONFIG_DIR=/config/dashboard)
+docker compose exec atuin-dashboard cat /config/dashboard/api-token
 ```
 
-Scripts can send it as a header instead:
+A non-loopback bind does not print the token at all: sending it over plain
+HTTP off-host would expose it on the wire, so put TLS in front and read the
+file directly.
+
+Scripts can send it as a header instead. Read it from the file rather than
+interpolating it into the command — `$(cat …)` expands before `curl` runs, so
+the token lands in the process arguments where any local process can read it:
 
 ```bash
-curl -H "X-Dashboard-Token: $(cat ~/.local/share/atuin-dashboard/api-token)" \
-  http://127.0.0.1:3001/api/client/overview
+# The token is in a header file, never in argv.
+printf 'X-Dashboard-Token: %s\n' "$(cat ~/.local/share/atuin-dashboard/api-token)" \
+  > /dev/shm/atuin-hdr && chmod 600 /dev/shm/atuin-hdr
+curl -H @/dev/shm/atuin-hdr http://127.0.0.1:3001/api/client/overview
+rm -f /dev/shm/atuin-hdr
+```
+
+In a container the token lives in the config volume instead:
+
+```bash
+docker compose exec atuin-dashboard cat /config/dashboard/api-token
 ```

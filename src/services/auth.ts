@@ -86,12 +86,29 @@ export function isAuthorised(request: Request): boolean {
 export function sessionCookie(): string {
   // HttpOnly so page scripts cannot read it; SameSite=Strict so another site
   // cannot make authenticated requests on the user's behalf.
-  return `${COOKIE}=${apiToken()}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800`;
+  //
+  // Secure whenever the bind is not loopback: off-host the cookie crosses a
+  // network, and without this flag a downgrade to http replays it in the
+  // clear. It is omitted on loopback because the browser would then refuse to
+  // store it over http://127.0.0.1, which is the normal local case.
+  const secure = envConfig.IS_LOOPBACK_HOST ? "" : " Secure;";
+  return `${COOKIE}=${apiToken()}; HttpOnly;${secure} SameSite=Strict; Path=/; Max-Age=604800`;
 }
 
 /** The URL to open, including the token, for printing at startup. */
 export function startupUrl(): string {
   const host = envConfig.IS_LOOPBACK_HOST ? "127.0.0.1" : envConfig.HOST;
+  if (!envConfig.IS_LOOPBACK_HOST) {
+    // Off-host, the token in this URL would cross the network in cleartext.
+    // The path to a public deployment is a TLS-terminating proxy in front,
+    // which is also where authentication for other users would live — so this
+    // prints an instruction rather than a link that leaks on first use.
+    return (
+      `http://${host}:${envConfig.PORT} — token NOT shown for a non-loopback bind.\n` +
+      `  Put TLS in front and read the token from ${tokenPath()}; sending it over ` +
+      `plain http off-host would expose it on the wire.`
+    );
+  }
   // /auth rather than /: the shell route must stay a bare HTML module, and
   // this path exists purely to turn the token into a cookie.
   return `http://${host}:${envConfig.PORT}/auth?token=${apiToken()}`;

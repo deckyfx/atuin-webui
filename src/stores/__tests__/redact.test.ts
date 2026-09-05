@@ -163,3 +163,31 @@ describe("secret shapes", () => {
   }
   });
 });
+
+describe("credential headers", () => {
+  const cases = [
+    `curl -H 'X-API-Key: "secret123"' https://x`,
+    `curl -H 'Authorization: Bearer "tok456"' https://x`,
+    `curl -H 'Authorization: Basic "YWJj"' https://x`,
+    `curl -H 'X-API-Key: plain789' https://x`,
+    `curl -H "Authorization: Bearer abc.def" https://x`,
+  ];
+
+  test("quoted and unquoted values are both redacted", () => {
+    for (const c of cases) {
+      const out = redactCommand(c);
+      for (const secret of ["secret123", "tok456", "YWJj", "plain789", "abc.def"]) {
+        if (c.includes(secret)) expect(out).not.toContain(secret);
+      }
+    }
+  });
+
+  test("the surrounding command survives", () => {
+    // An unquoted value that swallowed the closing quote took the URL with it.
+    for (const c of cases) {
+      const out = redactCommand(c);
+      expect(out).toContain("https://x");
+      expect(out).toContain("curl");
+    }
+  });
+});

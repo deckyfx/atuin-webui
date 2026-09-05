@@ -88,6 +88,7 @@ export function UsersPage() {
       setDeleteError("Preview the deletion scope before confirming.");
       return;
     }
+    const seq = previewSeq.current;
     setDeleting(userId);
     setConfirmDelete(null);
     setDeleteError(null);
@@ -109,6 +110,11 @@ export function UsersPage() {
           typeof (candidate as { records?: unknown }).records === "number"
             ? (candidate as { sessions: number; records: number })
             : null;
+        // Bound to this attempt: a 409 for one account arriving after the
+        // operator moved to another would otherwise replace that row's live
+        // preview with counts from a different user.
+        if (seq !== previewSeq.current) return;
+        previewSeq.current += 1;
         setDeletePreview(fresh ? { userId, ...fresh } : null);
         setConfirmDelete(fresh ? userId : null);
         setDeleteError(errorMessage(err, "This account changed since it was previewed"));

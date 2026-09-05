@@ -63,6 +63,22 @@ export function PrunePage() {
   const [dedupConfirming, setDedupConfirming] = useState(false);
   /** Invalidates in-flight previews when the chip selection changes. */
   const previewSeq = useRef(0);
+
+  /**
+   * Every chip-selection change goes through here.
+   *
+   * Bumping the sequence alone is not enough: previewVerbs only clears `busy`
+   * when its sequence is still current, so invalidating without settling the
+   * state left the controls disabled for good.
+   */
+  const changePicked = useCallback((next: Set<string>) => {
+    previewSeq.current += 1;
+    setPicked(next);
+    setVerbPreview(null);
+    setVerbConfirming(false);
+    setPreviewedVerbs([]);
+    setBusy(false);
+  }, []);
   const [dedupPreview, setDedupPreview] = useState<DedupPreview | null>(null);
 
 
@@ -186,10 +202,7 @@ export function PrunePage() {
           ? `Purged ${body.removed?.toLocaleString() ?? 0} entries; ${failed.length} command(s) refused.`
           : `Purged ${body.removed?.toLocaleString() ?? 0} entries.`
       );
-      setPicked(new Set());
-      setVerbPreview(null);
-      setPreviewedVerbs([]);
-      setVerbConfirming(false);
+      changePicked(new Set());
       loadVerbs();
     } catch (err) {
       // Covers both a rejected request and a non-2xx: a purge that did not
@@ -269,12 +282,7 @@ export function PrunePage() {
           <button
             onClick={() => {
               const available = verbs.filter((v) => NOISE_VERBS.includes(v.verb)).map((v) => v.verb);
-              // Invalidated like a chip toggle: this changes the selection, so
-              // a preview already in flight must not arm the confirm for it.
-              previewSeq.current += 1;
-              setPicked(new Set(available));
-              setVerbPreview(null);
-              setVerbConfirming(false);
+              changePicked(new Set(available));
             }}
             className="inline-flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink"
           >
@@ -290,15 +298,10 @@ export function PrunePage() {
               <button
                 key={v.verb}
                 onClick={() => {
-                  setPicked((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(v.verb)) next.delete(v.verb);
-                    else next.add(v.verb);
-                    return next;
-                  });
-                  previewSeq.current += 1;
-                  setVerbPreview(null);
-                  setVerbConfirming(false);
+                  const next = new Set(picked);
+                  if (next.has(v.verb)) next.delete(v.verb);
+                  else next.add(v.verb);
+                  changePicked(next);
                 }}
                 aria-pressed={on}
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs transition-colors ${

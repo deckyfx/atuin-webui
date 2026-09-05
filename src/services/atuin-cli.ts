@@ -52,6 +52,8 @@ export interface CommandResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  /** False when stdout was cut short by the size cap or a read error. */
+  stdoutComplete?: boolean;
 }
 
 /**
@@ -86,11 +88,14 @@ const MAX_STDERR_BYTES = 256 * 1024;
  * a cut-short listing for a complete one — which for a preview would mean
  * showing fewer entries than a delete would remove.
  */
-async function readCapped(stream: ReadableStream<Uint8Array>, limit: number): Promise<string> {
+async function readCapped(
+  stream: ReadableStream<Uint8Array>,
+  limit: number
+): Promise<{ text: string; complete: boolean }> {
   const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
-  let truncated = false;
+  let complete = true;
 
   try {
     for (;;) {
@@ -98,7 +103,7 @@ async function readCapped(stream: ReadableStream<Uint8Array>, limit: number): Pr
       if (done) break;
       if (!value) continue;
       if (total + value.byteLength > limit) {
-        truncated = true;
+        complete = false;
         await reader.cancel();
         break;
       }
@@ -106,7 +111,8 @@ async function readCapped(stream: ReadableStream<Uint8Array>, limit: number): Pr
       total += value.byteLength;
     }
   } catch {
-    // Surface whatever arrived; run() decides what a partial read means.
+    // A partial read is not a short answer; the caller must be able to tell.
+    complete = false;
   }
 
   const out = new Uint8Array(total);
@@ -115,8 +121,7 @@ async function readCapped(stream: ReadableStream<Uint8Array>, limit: number): Pr
     out.set(c, offset);
     offset += c.byteLength;
   }
-  const text = new TextDecoder().decode(out);
-  return truncated ? `${text}\n[output truncated at ${limit} bytes]` : text;
+  return { text: new TextDecoder().decode(out), complete };
 }
 
 export class AtuinCli {
@@ -199,15 +204,22 @@ export class AtuinCli {
     const timer = setTimeout(() => proc.kill(), COMMAND_TIMEOUT_MS);
     let stdout = "";
     let stderr = "";
+    // Whether stdout is the whole output. A preview that silently reports a
+    // short count while the delete removes everything is exactly the
+    // divergence the confirmation step exists to prevent.
+    let stdoutComplete = true;
     let exitCode: number;
     try {
       // Bounded reads. A broad search returns the whole history — thousands of
       // commands — and `Response.text()` would materialise all of it. The
       // timeout caps how long a command runs, not how much it can produce.
-      [stdout, stderr] = await Promise.all([
+      const [out, err] = await Promise.all([
         readCapped(proc.stdout, MAX_OUTPUT_BYTES),
         readCapped(proc.stderr, MAX_STDERR_BYTES),
       ]);
+      stdout = out.text;
+      stderr = err.text;
+      stdoutComplete = out.complete;
       exitCode = await proc.exited;
     } catch (err) {
       // A failed read is reported as a failed command, not thrown: callers
@@ -235,7 +247,7 @@ export class AtuinCli {
       };
     }
 
-    return { ok: exitCode === 0, stdout, stderr, exitCode };
+    return { ok: exitCode === 0, stdout, stderr, exitCode, stdoutComplete };
   }
 
   /** Whether the binary is present. Cached for the process lifetime. */
@@ -321,6 +333,14 @@ export class AtuinCli {
   }
 
   private static assertSearchOk(res: CommandResult): void {
+    // A truncated listing cannot be previewed: the count would be short while
+    // the delete still removes everything the query matches.
+    if (res.stdoutComplete === false) {
+      throw new Error(
+        "atuin returned more output than this dashboard will read, so the " +
+          "preview would understate what a delete removes. Narrow the query."
+      );
+    }
     if (res.ok || this.matchedNothing(res)) return;
     throw new Error(res.stderr.trim() || `atuin search failed (exit ${res.exitCode})`);
   }
