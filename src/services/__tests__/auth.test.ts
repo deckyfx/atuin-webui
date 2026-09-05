@@ -1,0 +1,102 @@
+import { test, expect, describe, beforeAll } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+/**
+ * Loopback is not an authorisation boundary, so these assertions are the thing
+ * standing between another local account and the history-deletion endpoints.
+ */
+describe("api token", () => {
+  let auth: typeof import("../auth");
+
+  beforeAll(async () => {
+    Bun.env.DASHBOARD_CONFIG_DIR = mkdtempSync(join(tmpdir(), "auth-test-"));
+    auth = await import("../auth");
+  });
+
+  const req = (headers: Record<string, string>, url = "http://127.0.0.1:3001/api/x") =>
+    new Request(url, { headers });
+
+  test("a request with no credential is rejected", () => {
+    expect(auth.isAuthorised(req({}))).toBe(false);
+  });
+
+  test("a wrong token is rejected", () => {
+    expect(auth.isAuthorised(req({ "x-dashboard-token": "wrong" }))).toBe(false);
+  });
+
+  test("a token of the right length but wrong content is rejected", () => {
+    // Guards the constant-time comparison: equal lengths must still fail.
+    const wrong = "0".repeat(auth.apiToken().length);
+    expect(auth.isAuthorised(req({ "x-dashboard-token": wrong }))).toBe(false);
+  });
+
+  test("the header, the cookie and the query all work", () => {
+    const token = auth.apiToken();
+    expect(auth.isAuthorised(req({ "x-dashboard-token": token }))).toBe(true);
+    expect(auth.isAuthorised(req({ cookie: `atuin_dashboard_session=${token}` }))).toBe(true);
+    expect(auth.isAuthorised(req({}, `http://127.0.0.1:3001/auth?token=${token}`))).toBe(true);
+  });
+
+  test("another cookie of the same name-prefix does not pass", () => {
+    expect(auth.isAuthorised(req({ cookie: "atuin_dashboard_session_x=zzz" }))).toBe(false);
+  });
+
+  test("the session cookie is HttpOnly and SameSite=Strict", () => {
+    const c = auth.sessionCookie();
+    expect(c).toContain("HttpOnly");
+    expect(c).toContain("SameSite=Strict");
+  });
+});
+
+describe("off-host requires TLS", () => {
+  test("a public bind rejects a token sent over plain http", async () => {
+    Bun.env.HOST = "0.0.0.0";
+    const { isAuthorised, apiToken } = await import("../auth");
+    const token = apiToken();
+    // The credential is correct; the transport is not. Capturing it off a
+    // cleartext hop is as good as reading the file.
+    expect(
+      isAuthorised(new Request("http://example.test/api/x", {
+        headers: { "x-dashboard-token": token },
+      }))
+    ).toBe(false);
+  });
+
+  test("the forwarding header alone does not prove TLS", async () => {
+    Bun.env.HOST = "0.0.0.0";
+    delete Bun.env.TRUST_PROXY_HEADERS;
+    const { isAuthorised, apiToken } = await import("../auth");
+    // Any client can send this header, so on its own it is a claim, not
+    // evidence. Accepting it made the TLS requirement satisfiable by typing
+    // one line — confirmed against a real public bind before this changed.
+    expect(
+      isAuthorised(new Request("http://example.test/api/x", {
+        headers: { "x-dashboard-token": apiToken(), "x-forwarded-proto": "https" },
+      }))
+    ).toBe(false);
+  });
+
+  test("a declared proxy makes the header meaningful", async () => {
+    Bun.env.HOST = "0.0.0.0";
+    Bun.env.TRUST_PROXY_HEADERS = "1";
+    const { isAuthorised, apiToken } = await import("../auth");
+    expect(
+      isAuthorised(new Request("http://example.test/api/x", {
+        headers: { "x-dashboard-token": apiToken(), "x-forwarded-proto": "https" },
+      }))
+    ).toBe(true);
+    delete Bun.env.TRUST_PROXY_HEADERS;
+  });
+
+  test("loopback still works over plain http", async () => {
+    Bun.env.HOST = "127.0.0.1";
+    const { isAuthorised, apiToken } = await import("../auth");
+    expect(
+      isAuthorised(new Request("http://127.0.0.1:3001/api/x", {
+        headers: { "x-dashboard-token": apiToken() },
+      }))
+    ).toBe(true);
+  });
+});

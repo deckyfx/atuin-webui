@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "oven.bun-vscode",
+    "bradlc.vscode-tailwindcss",
+    "esbenp.prettier-vscode",
+    "ms-vscode.vscode-typescript-next",
+    "mikestead.dotenv",
+    "usernamehw.errorlens"
+  ],
+  "unwantedRecommendations": []
+}

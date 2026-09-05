@@ -1,0 +1,176 @@
+import { desc, eq } from "drizzle-orm";
+import { getAppDb } from "../db/app";
+import { pruneAudit } from "../db/app-schema";
+import type { PruneAuditRow, NewPruneAudit } from "../db/app-schema";
+
+/**
+ * Patterns that commonly carry a secret inline in a shell command.
+ *
+ * Shell history routinely contains tokens: `curl -H "Authorization: Bearer …"`,
+ * `mysql -pHUNTER2`, `export AWS_SECRET_ACCESS_KEY=…`. The audit log records
+ * what was deleted, so without redaction it becomes a durable copy of exactly
+ * the material the deletion was often meant to remove.
+ */
+/**
+ * A secret value: a single-quoted string, a double-quoted string, or an
+ * unquoted run of non-space characters.
+ *
+ * Quoted forms come first and are matched whole — including escaped quotes
+ * inside them, since `"a\"b"` otherwise ends the match at the escape and
+ * leaves the rest of the secret in the row. An unquoted word absorbs
+ * backslash escapes for the same reason. Stopping at the first space leaves the tail of a
+ * passphrase in the log — both `--password "correct horse"` and
+ * `--password correct\ horse` would persist `horse` — which defeats the point
+ * of redacting at all.
+ */
+const VALUE = String.raw`(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|(?:\\.|\S)+)`;
+
+/**
+ * A header value.
+ *
+ * Same quoted forms, but the unquoted branch stops at a quote rather than
+ * consuming it: a header is usually written inside `-H '...'`, so an unquoted
+ * value ends at the closing quote, and swallowing it takes the rest of the
+ * command with it.
+ */
+const HEADER_VALUE = String.raw`(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|[^\s"']+)`;
+
+type Replacement = string | ((substring: string, ...args: string[]) => string);
+
+const REDACTIONS: Array<[RegExp, Replacement]> = [
+  // --password=… / --token … / -p …
+  // `(?:=|\s+)` rather than `[=\s]`: a single-character class matched exactly
+  // one separator, so `--password   secret` — aligned columns, or a pasted
+  // command — left the value in the log.
+  [new RegExp(String.raw`(-{1,2}(?:password|passwd|pwd|token|secret|api[-_]?key|auth|credential|private[-_]?key|access[-_]?key|bearer|passphrase)(?:=|\s+))${VALUE}`, "gi"),
+    "$1«redacted»"],
+  // FOO_TOKEN=… in an assignment or export
+  // Case-insensitive: `token=abc` in a URL or a lowercase shell variable is
+  // just as much a secret as GITHUB_TOKEN=abc.
+  // "auth"/"bearer" are matched as whole-ish words, not substrings: as
+  // substrings they redacted AUTHOR=jane and author_id=7, which are not
+  // secrets and whose loss makes the log harder to read.
+  [new RegExp(String.raw`\b([A-Za-z0-9_]*(?:token|secret|password|passwd|api_?key|auth_?token|authorization|bearer_?token)[A-Za-z0-9_]*=)${VALUE}`, "gi"),
+    "$1«redacted»"],
+  // Credential headers are colon-delimited, not `=`-delimited, so none of the
+  // assignment rules above reach them: `X-API-Key: sk_live_…` went in whole.
+  // ${VALUE}, not `[^\s"']+`: excluding quotes meant `X-API-Key: "secret"`
+  // kept the secret, because the pattern stopped at the opening quote.
+  [new RegExp(String.raw`\b((?:x-)?(?:api[-_]?key|auth[-_]?token|access[-_]?token|session[-_]?token|csrf[-_]?token|private[-_]?token):\s*)${HEADER_VALUE}`, "gi"),
+    "$1«redacted»"],
+  // Authorization: Bearer …  (often inside a quoted header argument)
+  // Bounded to the credential itself: `[^"']+` ran to the end of an unquoted
+  // command, so `curl -H Authorization: Bearer abc https://x` lost the URL too.
+  [new RegExp(String.raw`(Authorization:\s*(?:Bearer|Basic)\s+)${HEADER_VALUE}`, "gi"),
+    "$1«redacted»"],
+  // MySQL-style attached password: -pSECRET. Anchored to a token start so it
+  // cannot fire mid-word (a path like "dump-pending" is not a password).
+  // Both forms: `-pSECRET` and `-p SECRET`. The spaced form catches port
+  // arguments too (`docker run -p 8080:80`), which is deliberate — losing a
+  // port number from an audit entry is a smaller loss than keeping a password
+  // in it, and the two are syntactically identical.
+  [new RegExp(String.raw`(^|\s)(-p)(?:(\s+)|(?=\S))${VALUE}`, "g"),
+    (_m, pre, flag, gap) => `${pre}${flag}${gap ?? ""}«redacted»`],
+  // Long opaque blobs: JWTs, hex keys.
+  [/\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, "«redacted-jwt»"],
+  [/\b[0-9a-f]{40,}\b/gi, "«redacted-hex»"],
+];
+
+/** Masks likely secrets in a command before it is persisted. */
+export function redactCommand(command: string): string {
+  return REDACTIONS.reduce(
+    (acc, [re, to]) =>
+      typeof to === "string" ? acc.replace(re, to) : acc.replace(re, to),
+    command
+  );
+}
+
+/** Recursively redacts every string in a JSON-serialisable value. */
+export function redactValues(value: unknown): unknown {
+  if (typeof value === "string") return redactCommand(value);
+  if (Array.isArray(value)) return value.map(redactValues);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, redactValues(v)])
+    );
+  }
+  return value;
+}
+
+export interface AuditIntent {
+  action: string;
+  profile: string;
+  /** A JSON-serialisable description of the rule; strings are redacted. */
+  rule?: unknown;
+  matchedCount?: number;
+  /** Raw commands; redacted here before they reach the database. */
+  sample?: string[];
+}
+
+/**
+ * Append-only log of the dashboard's destructive operations.
+ *
+ * The intent is written *before* the operation runs and completed afterwards.
+ * Recording only on the way out meant a crash mid-delete left no trace of a
+ * change that had already propagated to every synced machine.
+ */
+export class AuditStore {
+  /**
+   * Records what is about to happen and returns the row id.
+   *
+   * Throws rather than swallowing: if the log cannot be written there will be
+   * no record of an irreversible deletion, so the caller must abort instead of
+   * proceeding blind.
+   */
+  static async begin(intent: AuditIntent): Promise<number> {
+    const row: NewPruneAudit = {
+      action: intent.action,
+      profile: intent.profile,
+      // The rule carries the user's search query, which is itself a fragment
+      // of a command and can contain the secret they were trying to purge.
+      // Redacted per value before serialisation. Running the patterns over
+      // finished JSON lets a quote or escape inside a value break the match,
+      // and a partly-redacted secret is still a leaked secret.
+      rule: intent.rule ? JSON.stringify(redactValues(intent.rule)) : null,
+      matchedCount: intent.matchedCount ?? 0,
+      sample: intent.sample ? JSON.stringify(intent.sample.map(redactCommand)) : null,
+      status: "pending",
+      // Deprecated column is NOT NULL; kept truthful rather than defaulted.
+      succeeded: false,
+      output: null,
+    };
+    const [inserted] = await getAppDb().insert(pruneAudit).values(row).returning({
+      id: pruneAudit.id,
+    });
+    if (!inserted) throw new Error("Audit log write returned no row.");
+    return inserted.id;
+  }
+
+  /** Marks a previously begun entry with its outcome. */
+  static async complete(
+    id: number,
+    result: { succeeded: boolean; output?: string; matchedCount?: number }
+  ): Promise<void> {
+    try {
+      await getAppDb()
+        .update(pruneAudit)
+        .set({
+          status: result.succeeded ? "succeeded" : "failed",
+          succeeded: result.succeeded,
+          // CLI output echoes matched command text back, so it needs the same
+          // treatment as the sample.
+          output: result.output ? redactCommand(result.output).slice(0, 4000) : null,
+          ...(result.matchedCount === undefined ? {} : { matchedCount: result.matchedCount }),
+        })
+        .where(eq(pruneAudit.id, id));
+    } catch (err) {
+      // The operation already ran. The row stays "pending", which reads as
+      // "outcome unknown" rather than falsely claiming the deletion failed.
+      console.error("audit: failed to complete entry", id, err);
+    }
+  }
+
+  static async recent(limit = 100): Promise<PruneAuditRow[]> {
+    return getAppDb().select().from(pruneAudit).orderBy(desc(pruneAudit.id)).limit(limit);
+  }
+}

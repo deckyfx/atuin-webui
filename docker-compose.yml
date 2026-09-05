@@ -1,0 +1,70 @@
+# Dashboard alongside a self-hosted atuin sync server.
+#
+# First boot: open the dashboard, go to Doctor, download the atuin client, then
+# log in on the setup screen. Both land in the bind mounts under ./data and
+# survive restarts, so this is a one-time step.
+services:
+  atuin-dashboard:
+    build: .
+    image: atuin-dashboard:latest
+    container_name: atuin-dashboard
+    restart: unless-stopped
+    ports:
+      # Bound to loopback: the setup form accepts a password and the Prune page
+      # deletes real history. Put a reverse proxy with TLS in front to expose it.
+      - "127.0.0.1:3001:3001"
+    environment:
+      # Required because HOST is 0.0.0.0 inside the container. Safe *here*
+      # because the port below is published to the host's loopback only —
+      # publish it more widely and this becomes a genuine exposure.
+      ALLOW_PUBLIC_BIND: "1"
+      ATUIN_PROFILE: live
+      # Pin the client release. Bump and restart to upgrade -- no rebuild.
+      ATUIN_VERSION: "18.20.1"
+      # Where the client syncs to. `atuin` is the service name below, so this
+      # traffic stays on the compose network and never crosses the host.
+      # Records are end-to-end encrypted, but the session token is a bearer
+      # credential sent in the clear — use https:// for any sync server that is
+      # not reachable purely over a private container network.
+      ATUIN_SYNC_ADDRESS: "http://atuin:8888"
+      # Optional: enables the Users/Sessions/Activity admin pages. Read-only,
+      # and the payloads are E2E-encrypted, so it never exposes command text.
+      # ATUIN_SERVER_DB_PATH: /srv/atuin/atuin.db
+    # The startup log carries the token URL. `docker compose logs atuin-dashboard`
+    # is how an operator gets it; the token file lives in the config volume.
+    volumes:
+      # Bind mounts, so the client's databases and the downloaded binary are
+      # inspectable from the host during development. The image runs as uid
+      # 1000; these must be owned by 1000 or the container cannot write them.
+      - ./data/client:/data
+      - ./data/config:/config
+      # Mount the server's database read-only to enable the admin pages:
+      # - ./data/server:/srv/atuin:ro
+      #
+      # Or skip the runtime download by reusing a host binary. It must be the
+      # MUSL build: atuin's installer places a glibc one, which will not start
+      # on this image's older libc.
+      # - /path/to/atuin-musl:/usr/local/bin/atuin:ro
+      #   with environment: ATUIN_BIN=/usr/local/bin/atuin
+    depends_on:
+      - atuin
+
+  # Your existing sync server. Shown for completeness -- adjust to match the
+  # stack you already run.
+  atuin:
+    image: ghcr.io/atuinsh/atuin:latest
+    container_name: atuin-server
+    restart: unless-stopped
+    command: start
+    volumes:
+      - ./data/server:/config
+    ports:
+      # Loopback, like the dashboard: "8888:8888" binds every interface, and
+      # the sync server accepts registrations and bearer tokens over plain
+      # HTTP. Front it with TLS before publishing it beyond this host.
+      - "127.0.0.1:8888:8888"
+    environment:
+      ATUIN_HOST: "0.0.0.0"
+      ATUIN_PORT: "8888"
+      ATUIN_DB_URI: "sqlite:///config/atuin.db?mode=rwc"
+      ATUIN_OPEN_REGISTRATION: "false"

@@ -1,0 +1,52 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "bun",
+      "request": "launch",
+      "name": "Dev: Atuin Dashboard (watch)",
+      "program": "src/server.ts",
+      "cwd": "${workspaceFolder}",
+      "watchMode": true,
+      "stopOnEntry": false,
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "type": "bun",
+      "request": "launch",
+      "name": "Debug: Atuin Dashboard",
+      "program": "src/server.ts",
+      "cwd": "${workspaceFolder}",
+      "watchMode": false,
+      "stopOnEntry": false
+    },
+    {
+      "type": "bun",
+      "request": "launch",
+      "name": "Debug: Current File",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "bun",
+      "request": "attach",
+      "name": "Attach to Bun",
+      "url": "ws://localhost:6499/",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Browser: Dashboard UI",
+      "url": "http://localhost:3001",
+      "webRoot": "${workspaceFolder}/src/public"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack: Server + Browser",
+      "configurations": ["Debug: Atuin Dashboard", "Browser: Dashboard UI"],
+      "stopAll": true
+    }
+  ]
+}

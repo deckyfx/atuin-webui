@@ -1,0 +1,30 @@
+{
+  "folders": [
+    {
+      "name": "atuin-dashboard",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "files.eol": "\n",
+    // Upstream is read-only reference: keep it out of search/watch noise,
+    // but still openable and greppable via explicit "search in folder".
+    "files.watcherExclude": {
+      "**/atuin-upstream/target/**": true
+    },
+    "search.exclude": {
+      "**/atuin-upstream/target/**": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "oven.bun-vscode",
+      "bradlc.vscode-tailwindcss",
+      "esbenp.prettier-vscode",
+      "mikestead.dotenv",
+      "usernamehw.errorlens",
+      "rust-lang.rust-analyzer",
+      "alexcvzz.vscode-sqlite"
+    ]
+  }
+}

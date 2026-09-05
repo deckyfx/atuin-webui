@@ -1,0 +1,44 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "dev",
+      "type": "shell",
+      "command": "bun run dev",
+      "isBackground": true,
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "typecheck",
+      "type": "shell",
+      "command": "bun run typecheck",
+      "problemMatcher": ["$tsc"],
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "panel": "dedicated", "reveal": "silent" }
+    },
+    {
+      "label": "typecheck: watch",
+      "type": "shell",
+      "command": "bunx tsc --noEmit --watch",
+      "isBackground": true,
+      "problemMatcher": ["$tsc-watch"],
+      "presentation": { "panel": "dedicated", "reveal": "never" }
+    },
+    {
+      "label": "drizzle: studio",
+      "type": "shell",
+      "command": "bun run studio",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated" }
+    },
+    {
+      "label": "install",
+      "type": "shell",
+      "command": "bun install",
+      "problemMatcher": []
+    }
+  ]
+}

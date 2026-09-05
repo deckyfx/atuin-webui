@@ -1,0 +1,20 @@
+# Disposable Atuin sync server for dashboard development.
+# Teardown with: docker compose down -v && rm -rf server-config/*
+services:
+  atuin-test:
+    image: ghcr.io/atuinsh/atuin:latest
+    container_name: atuin-sandbox-server
+    command: start
+    restart: no
+    volumes:
+      - "./server-config:/config"
+    ports:
+      # 8889 on the host: prod atuin stays on 8888, untouched.
+      - "127.0.0.1:8889:8888"
+    environment:
+      ATUIN_HOST: "0.0.0.0"
+      ATUIN_PORT: "8888"
+      # SQLite, matching prod's backend. No Postgres container needed.
+      ATUIN_DB_URI: "sqlite:///config/atuin.db?mode=rwc"
+      ATUIN_OPEN_REGISTRATION: "true"
+      RUST_LOG: "info,atuin_server=debug"
