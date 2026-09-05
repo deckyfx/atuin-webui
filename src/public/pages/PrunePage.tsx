@@ -209,7 +209,8 @@ export function PrunePage() {
       const taken = rule();
       setPreview(
         await postJson<PreviewResult>("/api/prune/preview", taken, {
-          expect: hasNumber("total"),
+          // Both counts: the confirm renders "N entries" and "M distinct".
+          expect: hasNumber("total", "unique"),
         })
       );
       setPreviewedRule(taken);
@@ -268,6 +269,9 @@ export function PrunePage() {
           <button
             onClick={() => {
               const available = verbs.filter((v) => NOISE_VERBS.includes(v.verb)).map((v) => v.verb);
+              // Invalidated like a chip toggle: this changes the selection, so
+              // a preview already in flight must not arm the confirm for it.
+              previewSeq.current += 1;
               setPicked(new Set(available));
               setVerbPreview(null);
               setVerbConfirming(false);

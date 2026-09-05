@@ -22,7 +22,12 @@ export function getAppDb(): BunSQLiteDatabase<typeof appSchema> {
   mkdirSync(dirname(envConfig.APP_DB_PATH), { recursive: true });
   const sqlite = new Database(envConfig.APP_DB_PATH, { create: true });
   sqlite.run("PRAGMA journal_mode=WAL;");
-  sqlite.run("PRAGMA busy_timeout=5000;");
+  // Long enough to cover a concurrent migration. Two instances starting
+  // together both try to migrate, and drizzle's migrator does not retry: with
+  // a short timeout the loser fails with "database is locked" instead of
+  // waiting for the winner and then finding the work already done. This is
+  // what serialises migrators — SQLite's own lock, not a lock file.
+  sqlite.run("PRAGMA busy_timeout=30000;");
   cached = drizzle(sqlite, { schema: appSchema });
   return cached;
 }

@@ -39,9 +39,19 @@ export class Migrator {
         .map((f) => rm(join(this.dir, f), { force: true }))
     );
 
-    writeFileSync(join(this.dir, "meta", "_journal.json"), embeddedMigrations.journal);
+    // Written to a temporary name and renamed into place: rename is atomic, so
+    // a reader sees either the old file or the complete new one. The lock
+    // already excludes concurrent writers; this makes a partial file
+    // impossible rather than merely unlikely.
+    const writeAtomic = (path: string, contents: string): void => {
+      const tmp = `${path}.tmp-${process.pid}-${Date.now().toString(36)}`;
+      writeFileSync(tmp, contents);
+      renameSync(tmp, path);
+    };
+
+    writeAtomic(join(this.dir, "meta", "_journal.json"), embeddedMigrations.journal);
     for (const [name, sql] of Object.entries(embeddedMigrations.files)) {
-      writeFileSync(join(this.dir, name), sql);
+      writeAtomic(join(this.dir, name), sql);
     }
   }
 

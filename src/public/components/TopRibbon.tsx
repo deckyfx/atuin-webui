@@ -31,8 +31,12 @@ export function TopRibbon() {
   const [statusFailed, setStatusFailed] = useState(false);
 
   useEffect(() => {
+    // Cancelled on unmount: a response landing afterwards would set state on a
+    // component that is gone.
+    let live = true;
     getJson<SetupStatus>("/api/setup/status")
       .then((s) => {
+        if (!live) return;
         setStatus(s);
         setStatusFailed(false);
       })
@@ -40,9 +44,14 @@ export function TopRibbon() {
       // not the same state: one resolves on its own, the other never will.
       // The badge says which rather than showing a spinner forever.
       .catch(() => {
+        if (!live) return;
         setStatus(null);
         setStatusFailed(true);
       });
+
+    return () => {
+      live = false;
+    };
   }, []);
 
   async function sync() {
@@ -136,8 +145,10 @@ export function ToastStack() {
   return (
     <div
       className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm"
-      role="status"
-      aria-live="polite"
+      role="log"
+      // Politeness follows severity: an error interrupts, a routine result
+      // waits for a pause. A fixed "polite" buries a failed deletion.
+      aria-live={toasts.some((t) => t.kind === "error") ? "assertive" : "polite"}
     >
       {toasts.map((t) => (
         <button

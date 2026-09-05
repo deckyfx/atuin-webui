@@ -100,7 +100,15 @@ export function UsersPage() {
       if (err instanceof HttpError && err.status === 409) {
         // Not a failure: the scope moved between preview and confirm. Show the
         // new numbers and ask again rather than reporting an error.
-        const fresh = (err.body as { preview?: { sessions: number; records: number } })?.preview;
+        // Validated like any other response body: a malformed 409 payload
+        // would otherwise render "undefined session(s)" beside a live confirm.
+        const candidate = (err.body as { preview?: unknown })?.preview;
+        const fresh =
+          candidate &&
+          typeof (candidate as { sessions?: unknown }).sessions === "number" &&
+          typeof (candidate as { records?: unknown }).records === "number"
+            ? (candidate as { sessions: number; records: number })
+            : null;
         setDeletePreview(fresh ? { userId, ...fresh } : null);
         setConfirmDelete(fresh ? userId : null);
         setDeleteError(errorMessage(err, "This account changed since it was previewed"));
@@ -177,7 +185,15 @@ export function UsersPage() {
                           Yes, delete
                         </button>
                         <button
-                          onClick={() => setConfirmDelete(null)}
+                          onClick={() => {
+                            // Invalidated as well as cleared: a preview still in
+                            // flight would otherwise land after the cancel and
+                            // re-populate the row.
+                            previewSeq.current += 1;
+                            setConfirmDelete(null);
+                            setDeletePreview(null);
+                            setDeleteError(null);
+                          }}
                           className="text-xs px-2 py-1 rounded bg-hover text-ink-muted hover:bg-hover transition-colors"
                         >
                           Cancel

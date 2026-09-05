@@ -79,7 +79,11 @@ export function HistoryPage() {
     const t = setTimeout(() => {
       getJson<HistoryPageData>(`/api/history?${params}`, {
         signal: controller.signal,
-        expect: (v) => isArray((v as HistoryPageData)?.rows),
+        // rows *and* total: the pager renders the count, so validating only
+        // the array let "1–50 of undefined" reach the screen.
+        expect: (v) =>
+          isArray((v as HistoryPageData)?.rows) &&
+          typeof (v as HistoryPageData)?.total === "number",
       })
         .then((d) => {
           setData(d);

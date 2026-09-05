@@ -78,8 +78,9 @@ gh pr create --base main --fill
 ```
 
 Remote CodeRabbit reviews automatically on open and on each push
-(`auto_review.enabled` in `.coderabbit.yaml`). Draft PRs are skipped, so open
-as a draft while it is still moving.
+(`auto_review.enabled` in `.coderabbit.yaml`). Draft PRs are skipped, so open as a draft while the branch is still moving —
+and note that marking it ready for review is a manual step: CodeRabbit will not
+review a draft no matter how many times you push to it.
 
 ## 3. Apply the feedback
 

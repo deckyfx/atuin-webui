@@ -166,7 +166,10 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
           </p>
 
           {installError && (
-            <p className="mt-4 text-danger text-sm bg-danger-soft border border-danger/30 rounded-lg px-4 py-2">
+            <p
+              role="alert"
+              className="mt-4 text-danger text-sm bg-danger-soft border border-danger/30 rounded-lg px-4 py-2"
+            >
               {installError}
             </p>
           )}

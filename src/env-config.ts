@@ -34,6 +34,11 @@ class EnvConfig {
       );
     }
 
+    // Touched during construction so a malformed value fails at startup with a
+    // clear message, rather than on the first request that happens to read it.
+    void this.PORT;
+    void this.HOST;
+
     if (this.KEY_INLINE && this.KEY_FILE) {
       throw new Error(
         "Set either ATUIN_KEY_FILE or ATUIN_KEY, not both. Prefer ATUIN_KEY_FILE."

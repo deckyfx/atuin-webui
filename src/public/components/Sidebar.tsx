@@ -38,10 +38,16 @@ const SERVER_NAV: NavItem[] = [
 
 function NavGroup({ title, items }: { title: string; items: NavItem[] }) {
   const { route, navigate } = useRouteStore();
+  const headingId = `nav-group-${title.replace(/\s+/g, "-").toLowerCase()}`;
 
   return (
-    <div className="px-3 py-2">
-      <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
+    // A named group, so the heading labels the links inside it rather than
+    // being read as loose text before them.
+    <div className="px-3 py-2" role="group" aria-labelledby={headingId}>
+      <p
+        id={headingId}
+        className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-subtle"
+      >
         {title}
       </p>
       <div className="space-y-0.5">

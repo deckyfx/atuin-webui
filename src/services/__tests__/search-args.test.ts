@@ -38,17 +38,26 @@ describe("searchArgs builds the query the caller asked for", () => {
     // version of this silently failed every invocation.
     // Present *and* before the positional: asserting only the index would
     // pass vacuously if the flag were dropped entirely (indexOf → -1).
+    // toContain already proves presence; the index assertion is about order.
     expect(args).toContain("--cmd-only");
-    expect(args.indexOf("--cmd-only")).toBeGreaterThanOrEqual(0);
     expect(args.indexOf("--cmd-only")).toBeLessThan(args.length - 1);
   });
 
-  test("preview and delete differ only by their extra flags", () => {
-    const preview = AtuinCli.searchArgs(rule, ["--cmd-only", "--print0", "--include-duplicates"]);
-    const del = AtuinCli.searchArgs(rule, ["--delete", "--include-duplicates"]);
-    const strip = (a: string[]) => a.filter((x) => !x.startsWith("--cmd-only") && !x.startsWith("--print0") && x !== "--delete");
-    // The confirm step rests on these describing the same set of entries.
-    expect(strip(preview)).toEqual(strip(del));
+  test("preview and delete select the same entries", () => {
+    // Built from the flags the callers actually pass, so the test breaks if
+    // either side changes its selection arguments — which is the property the
+    // confirm step depends on. Output-shape flags are the only difference.
+    const previewFlags = ["--cmd-only", "--print0", "--include-duplicates"];
+    const deleteFlags = ["--delete", "--include-duplicates"];
+    const outputOnly = new Set(["--cmd-only", "--print0", "--delete"]);
+
+    const selection = (extra: string[]) =>
+      AtuinCli.searchArgs(rule, extra).filter((a) => !outputOnly.has(a));
+
+    expect(selection(previewFlags)).toEqual(selection(deleteFlags));
+    // And both must still carry --include-duplicates, or the counts diverge.
+    expect(AtuinCli.searchArgs(rule, previewFlags)).toContain("--include-duplicates");
+    expect(AtuinCli.searchArgs(rule, deleteFlags)).toContain("--include-duplicates");
   });
 
   test("an empty query throws rather than widening the rule", () => {

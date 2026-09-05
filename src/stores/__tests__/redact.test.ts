@@ -7,8 +7,14 @@ import { redactCommand, redactValues } from "../audit-store";
  * pattern that stops at the first space leaves the tail of a passphrase behind.
  */
 describe("redactCommand", () => {
-  test("redacts an unquoted flag value", () => {
-    expect(redactCommand("mysql -u root -pSuperSecret123 db")).not.toContain("SuperSecret123");
+  test("redacts an unquoted flag value and keeps the rest", () => {
+    const out = redactCommand("mysql -u root -pSuperSecret123 db");
+    expect(out).not.toContain("SuperSecret123");
+    // The audit entry has to stay useful: over-redaction that eats the command
+    // is its own failure, just a quieter one.
+    expect(out).toContain("mysql");
+    expect(out).toContain("-u root");
+    expect(out).toContain("db");
   });
 
   test("redacts a double-quoted value containing spaces", () => {
@@ -22,9 +28,12 @@ describe("redactCommand", () => {
     expect(out).not.toContain("a b c");
   });
 
-  test("redacts an environment assignment", () => {
+  test("redacts an environment assignment and keeps the name", () => {
     const out = redactCommand("export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCY");
     expect(out).not.toContain("wJalrXUtnFEMIK7MDENGbPxRfiCY");
+    // Which variable was set is the useful half; only its value is sensitive.
+    expect(out).toContain("AWS_SECRET_ACCESS_KEY=");
+    expect(out).toContain("export");
   });
 
   test("redacts a quoted environment assignment", () => {
@@ -93,51 +102,53 @@ describe("redaction covers every persisted audit field", () => {
   });
 });
 
-test("redacts a value with backslash-escaped whitespace", () => {
+describe("secret shapes", () => {
+
+  test("redacts a value with backslash-escaped whitespace", () => {
   const out = redactCommand("login --password correct\\ horse\\ battery");
   expect(out).not.toContain("horse");
   expect(out).not.toContain("battery");
-});
+  });
 
-test("does not fire on -p inside a word", () => {
+  test("does not fire on -p inside a word", () => {
   const cmd = "./scripts/dump-pending.sh";
   expect(redactCommand(cmd)).toBe(cmd);
-});
+  });
 
-test("redacts lowercase inline assignments", () => {
+  test("redacts lowercase inline assignments", () => {
   expect(redactCommand("curl 'https://x?token=abc123secret'")).not.toContain("abc123secret");
   expect(redactCommand("api_key=lowercase_secret ./run")).not.toContain("lowercase_secret");
-});
+  });
 
-test("redacts a quoted value containing an escaped quote", () => {
+  test("redacts a quoted value containing an escaped quote", () => {
   const out = redactCommand('login --password "a\\"b secret tail"');
   expect(out).not.toContain("secret tail");
   expect(out).not.toContain('b secret');
-});
+  });
 
-test("an Authorization header does not swallow the rest of the command", () => {
+  test("an Authorization header does not swallow the rest of the command", () => {
   const out = redactCommand("curl -H Authorization: Bearer abc123 https://example.test/x");
   expect(out).not.toContain("abc123");
   // The bound matters: an unbounded match ran to end-of-line and ate the URL.
   expect(out).toContain("https://example.test/x");
-});
+  });
 
-test("ordinary author fields are not mistaken for credentials", () => {
+  test("ordinary author fields are not mistaken for credentials", () => {
   // "auth" as a substring redacted these, which loses useful audit detail.
   expect(redactCommand("git log --author=jane")).toContain("jane");
   expect(redactCommand("curl 'https://x?author_id=7'")).toContain("author_id=7");
   // The genuine ones still go.
   expect(redactCommand("AUTH_TOKEN=abc123 ./run")).not.toContain("abc123");
-});
+  });
 
-test("redacts a value separated by multiple spaces", () => {
+  test("redacts a value separated by multiple spaces", () => {
   // A single-character separator class matched only one space, so aligned or
   // pasted commands kept their secrets.
   expect(redactCommand("login --password   hunter2")).not.toContain("hunter2");
   expect(redactCommand("deploy --token\t\tabc123")).not.toContain("abc123");
-});
+  });
 
-test("XDG derivation refuses a data dir that would split reads from writes", async () => {
+  test("XDG derivation refuses a data dir that would split reads from writes", async () => {
   // atuin derives its data dir as XDG_DATA_HOME/atuin, so a client dir with a
   // different last segment makes the CLI write somewhere the dashboard is not
   // reading. Guarded rather than silently divergent.
@@ -150,4 +161,5 @@ test("XDG derivation refuses a data dir that would split reads from writes", asy
     if (prev === undefined) delete Bun.env.ATUIN_CLIENT_DATA_DIR;
     else Bun.env.ATUIN_CLIENT_DATA_DIR = prev;
   }
+  });
 });
