@@ -517,9 +517,62 @@ export class AtuinCli {
     });
   }
 
+  /**
+   * Whether this atuin requires the dedup selector flags.
+   *
+   * 18.23 made `--before` and `--dupkeep` mandatory; on 18.20 and earlier they
+   * are not accepted at all. The dashboard can be pointed at either — a system
+   * install, or whichever release it downloaded — so the shape is probed from
+   * `--help` once rather than assumed from a version string, which would be a
+   * second thing to keep in step with upstream.
+   */
+  private static dedupNeedsFlags?: boolean;
+
+  private static async dedupWantsFlags(): Promise<boolean> {
+    if (this.dedupNeedsFlags === undefined) {
+      const help = await this.run(["history", "dedup", "--help"]);
+      this.dedupNeedsFlags = help.stdout.includes("--dupkeep");
+    }
+    return this.dedupNeedsFlags;
+  }
+
+  /** Arguments selecting "every duplicate, keeping the most recent one". */
+  private static async dedupArgs(extra: string[] = []): Promise<string[]> {
+    const base = ["history", "dedup", ...extra];
+    if (!(await this.dedupWantsFlags())) return base;
+    // `--before now` is the whole history, and `--dupkeep 1` keeps one of each
+    // group — the semantics the older bare command had, stated explicitly.
+    return [...base, "--dupkeep", "1", "--before", "now"];
+  }
+
+  /** Test seam: the raw stdout of an invocation. */
+  static async run0(args: string[]): Promise<string> {
+    return (await this.run(args)).stdout;
+  }
+
+  /** Test seam: the dedup arguments this binary would receive. */
+  static async dedupArgs0(): Promise<string[]> {
+    return this.dedupArgs();
+  }
+
   /** Deletes duplicate entries sharing command, cwd and hostname. */
   static async dedup(): Promise<CommandResult> {
-    return this.run(["history", "dedup"]);
+    return this.run(await this.dedupArgs());
+  }
+
+  /**
+   * What a dedup would remove, from atuin itself.
+   *
+   * Newer atuin has `--dry-run`, which is the same selection the delete makes
+   * rather than a reimplementation of it in SQL. Returns null when the binary
+   * is too old to offer it, so the caller can fall back rather than report a
+   * count it did not get.
+   */
+  static async dedupDryRun(): Promise<number | null> {
+    if (!(await this.dedupWantsFlags())) return null;
+    const res = await this.run(await this.dedupArgs(["--dry-run"]));
+    if (!res.ok) return null;
+    return res.stdout.split("\n").filter((l) => l.trim().length > 0).length;
   }
 
   /** Deletes entries matching the client's configured exclusion filters. */

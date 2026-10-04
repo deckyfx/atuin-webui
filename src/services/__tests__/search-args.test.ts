@@ -86,3 +86,18 @@ describe("a non-zero exit is not a timeout", () => {
     expect(result.unique).toBe(0);
   });
 });
+
+describe("dedup adapts to the installed atuin", () => {
+  test("the argument shape matches what this binary accepts", async () => {
+    // 18.23 made --before and --dupkeep mandatory; 18.20 rejects them. The
+    // probe reads --help rather than parsing a version, so a dedup built here
+    // must be runnable by whichever binary is actually present.
+    const help = await AtuinCli.run0(["history", "dedup", "--help"]);
+    const needsFlags = help.includes("--dupkeep");
+    const args = await AtuinCli.dedupArgs0();
+    expect(args.includes("--dupkeep")).toBe(needsFlags);
+    expect(args.includes("--before")).toBe(needsFlags);
+    // Either way it is still the dedup subcommand.
+    expect(args.slice(0, 2)).toEqual(["history", "dedup"]);
+  });
+});

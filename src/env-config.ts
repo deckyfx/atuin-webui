@@ -201,9 +201,15 @@ class EnvConfig {
    *
    * Read at runtime rather than compiled in, so upgrading atuin is an env
    * change and a restart — not a dashboard image rebuild.
+   *
+   * The default tracks a release the dashboard is known to work against.
+   * atuin changes its CLI between minor versions — 18.23 made `--before` and
+   * `--dupkeep` mandatory on `history dedup`, which 18.20 does not accept at
+   * all — so the code probes for the shape it needs rather than trusting this
+   * number.
    */
   get ATUIN_VERSION(): string {
-    return Bun.env.ATUIN_VERSION ?? "18.20.1";
+    return Bun.env.ATUIN_VERSION ?? "18.23.0";
   }
 
   /** Explicit path to an atuin binary, overriding discovery. */

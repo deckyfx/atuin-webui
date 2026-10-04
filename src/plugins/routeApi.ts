@@ -581,7 +581,17 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
     },
     { body: verbListSchema }
   )
-  .get("/dedup/preview", async () => await HistoryStore.duplicatePreview(20))
+  .get("/dedup/preview", async () => {
+    const preview = await HistoryStore.duplicatePreview(20);
+    // atuin's own dry-run when the binary offers one: it is the same selection
+    // the delete makes, where the SQL figure is a reimplementation of it that
+    // can drift as upstream changes what "duplicate" means. The SQL count is
+    // kept as the fallback and for the fingerprint, which dry-run cannot give.
+    const fromAtuin = await AtuinCli.dedupDryRun();
+    return fromAtuin === null
+      ? preview
+      : { ...preview, removable: fromAtuin, countedBy: "atuin" as const };
+  })
   .post(
     "/dedup",
     async ({ body, set }) => {
