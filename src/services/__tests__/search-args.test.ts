@@ -70,3 +70,19 @@ describe("searchArgs builds the query the caller asked for", () => {
     expect(args).toContain("--before");
   });
 });
+
+describe("a non-zero exit is not a timeout", () => {
+  test("a query that matches nothing reports zero, not a failure", async () => {
+    // `proc.killed` is true for any exited process in Bun, so testing it
+    // reported atuin's ordinary exit-1 ("matched nothing") as a 120s timeout —
+    // returned in 21ms — and put that text in stderr, which defeated the
+    // empty-stderr test that tells "no matches" apart from a real failure.
+    const result = await AtuinCli.previewDelete({
+      query: "zzzz-definitely-not-a-command-zzzz",
+      searchMode: "prefix",
+      filterMode: "global",
+    });
+    expect(result.total).toBe(0);
+    expect(result.unique).toBe(0);
+  });
+});

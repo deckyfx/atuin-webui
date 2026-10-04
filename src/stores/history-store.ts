@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, like, sql, count } from "drizzle-orm";
+import { and, desc, eq, isNull, like, ne, sql, count } from "drizzle-orm";
 import { getHistoryDb, readClientMeta } from "../db/history";
 import { clientHistory } from "../db/history-schema";
 import type { ClientHistoryRow } from "../db/history-schema";
@@ -285,12 +285,27 @@ export class HistoryStore {
       .from(clientHistory)
       .where(and(this.liveOnly(), sql.raw(category.predicate)));
 
+    // Only commands that can actually be removed. A command that another
+    // command strictly extends is refused by the prefix delete, and without
+    // this filter those stay at the head of every page — a quarter of each
+    // batch spent re-fetching commands that will never go.
+    const deletable = sql`not exists (
+      select 1 from ${clientHistory} ext
+      where ext.deleted_at is null
+        and ext.command like ${clientHistory.command} || '_%'
+    )`;
+
     const rows = await db
       .selectDistinct({ command: clientHistory.command })
       .from(clientHistory)
-      .where(and(this.liveOnly(), sql.raw(category.predicate)))
+      .where(and(this.liveOnly(), sql.raw(category.predicate), deletable))
       .limit(limit);
 
+    // No blocked count here. Counting them means evaluating the NOT EXISTS
+    // against every command in the category rather than stopping at `limit`,
+    // which turned a 0.3s page into a 63s one. The filtered page is what the
+    // caller needs; how many were excluded is reported once by the analysis
+    // endpoint instead of on every page.
     return { commands: rows.map((r) => r.command), distinct: totals?.distinct ?? 0 };
   }
 
@@ -355,6 +370,39 @@ export class HistoryStore {
     return clusterNearDuplicates(rows.map((r) => r.command), threshold)
       .flatMap((c) => c.remove)
       .slice(0, limit);
+  }
+
+  /** How many live entries are exactly this command. */
+  static async occurrencesOf(command: string): Promise<number> {
+    const [row] = await getHistoryDb()
+      .select({ n: count() })
+      .from(clientHistory)
+      .where(and(this.liveOnly(), eq(clientHistory.command, command)));
+    return row?.n ?? 0;
+  }
+
+  /**
+   * Commands that strictly extend `command`, i.e. what a prefix delete would
+   * also remove.
+   *
+   * The same guard `AtuinCli.previewExact` provides, answered by the database
+   * instead of a CLI search. For a multi-line heredoc the CLI form passes the
+   * whole 2KB command as a prefix query and scans every row — about 300ms
+   * each, twice per deletion. This is an indexed LIKE: microseconds, and it
+   * sees the same rows the delete will.
+   */
+  static async overmatchesFor(command: string): Promise<number> {
+    const [row] = await getHistoryDb()
+      .select({ n: count() })
+      .from(clientHistory)
+      .where(
+        and(
+          this.liveOnly(),
+          like(clientHistory.command, `${command}_%`),
+          ne(clientHistory.command, command)
+        )
+      );
+    return row?.n ?? 0;
   }
 
   /** Daily command counts for the trailing `days` window. */

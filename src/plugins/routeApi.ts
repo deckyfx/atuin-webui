@@ -279,29 +279,50 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
       let removedRows = 0;
 
       for (const command of body.commands) {
-        let matched: number;
+        // The guard and the count both come from the database rather than two
+        // more CLI searches. For a long multi-line command the CLI form passes
+        // the whole text as a prefix query and scans every row — roughly 300ms
+        // each, twice — which is what made a 5,000-command purge take half an
+        // hour. SQLite answers the same questions against the same rows.
+        let matched = 0;
+        let overmatches = 0;
         try {
-          matched = (await AtuinCli.previewExact(command)).total;
+          [matched, overmatches] = await Promise.all([
+            HistoryStore.occurrencesOf(command),
+            HistoryStore.overmatchesFor(command),
+          ]);
         } catch (err) {
-          // Refused rather than deleted blind: the rest of the batch still
-          // runs, and this one is reported back.
           results.push({
             command,
             ok: false,
-            message: `Skipped: could not preview scope. ${
+            message: `Skipped: could not establish scope. ${
               err instanceof Error ? err.message : ""
             }`.trim(),
           });
           continue;
         }
 
-        const res = await AtuinCli.deleteExact(command);
+        if (overmatches > 0) {
+          // Same refusal as the single-delete path: a prefix delete would take
+          // longer commands that were never previewed.
+          results.push({
+            command,
+            ok: false,
+            message: `Refusing: ${overmatches} longer command(s) share this prefix.`,
+          });
+          continue;
+        }
+
+        const res = await AtuinCli.deleteMatching({
+          query: command,
+          searchMode: "prefix",
+          filterMode: "global",
+        });
         if (res.ok) removedRows += matched;
         results.push({
           command,
           ok: res.ok,
-          message: res.ok ? undefined : res.stderr,
-          overmatches: res.refused?.overmatches,
+          message: res.ok ? undefined : (res.stderr || "").trim(),
         });
       }
 

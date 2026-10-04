@@ -201,7 +201,17 @@ export class AtuinCli {
     // daemon, a sync against an unreachable server — and this runs inside an
     // HTTP handler, so an unbounded wait ties up the request until the client
     // gives up with no explanation.
-    const timer = setTimeout(() => proc.kill(), COMMAND_TIMEOUT_MS);
+    // Tracked explicitly rather than read back from the process: `proc.killed`
+    // is true for *any* exited process in Bun, not only one this timer stopped,
+    // so testing it reported atuin's ordinary non-zero exits as timeouts — a
+    // "did not finish within 120s" message returned in 21ms. Worse, it put
+    // that text in stderr, which defeated the empty-stderr test that
+    // distinguishes "matched nothing" from a real failure.
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill();
+    }, COMMAND_TIMEOUT_MS);
     let stdout = "";
     let stderr = "";
     // Whether stdout is the whole output. A preview that silently reports a
@@ -236,7 +246,7 @@ export class AtuinCli {
       clearTimeout(timer);
     }
 
-    if (proc.killed && exitCode !== 0) {
+    if (timedOut) {
       return {
         ok: false,
         stdout,

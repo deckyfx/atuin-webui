@@ -50,6 +50,7 @@ export function AnalysisPage() {
   const [progress, setProgress] = useState<string | null>(null);
   const push = useToastStore((s) => s.push);
   const seq = useRef(0);
+  const cancelRef = useRef(false);
 
   // Near-duplicates are computed on demand: the pass is ~1.5s over the whole
   // history, which is fine for a button and wrong for a page load.
@@ -116,17 +117,32 @@ export function AnalysisPage() {
       } else if (c.mechanism === "exact") {
         // Deleted in batches of distinct commands: atuin cannot match "is
         // multi-line", so each command goes individually.
+        // Smaller batches than the cap: progress is only visible between
+        // requests, and a 200-command batch left the UI silent for minutes.
+        cancelRef.current = false;
         for (;;) {
+          if (cancelRef.current) {
+            push("info", `Stopped after ${removed.toLocaleString()}.`);
+            break;
+          }
           const batch = await getJson<{ commands: string[]; distinct: number }>(
-            `/api/history/analysis/${c.id}/commands?limit=200`
+            `/api/history/analysis/${c.id}/commands?limit=50`
           );
           if (batch.commands.length === 0) break;
-          setProgress(`${removed} removed, ${batch.distinct} distinct commands left`);
-          const body = await postJson<{ deleted: number }>("/api/history/delete-batch", {
-            commands: batch.commands,
-          });
-          if (!body.deleted) break; // nothing moved; stop rather than spin
-          removed += body.deleted;
+          setProgress(
+            `${removed.toLocaleString()} removed · ${batch.distinct.toLocaleString()} distinct left`
+          );
+          const body = await postJson<{ deleted: number; refused?: unknown[] }>(
+            "/api/history/delete-batch",
+            { commands: batch.commands }
+          );
+          removed += body.deleted ?? 0;
+          // Every command in the batch refused means the remainder cannot be
+          // removed either — stop rather than re-fetch the same head forever.
+          if (!body.deleted) {
+            push("error", `Stopped: ${batch.commands.length} commands could not be removed.`);
+            break;
+          }
         }
       }
 
@@ -432,12 +448,16 @@ export function AnalysisPage() {
                       {busy === c.id ? "Removing…" : "Yes, purge"}
                     </button>
                     <button
-                      onClick={() => setConfirming(null)}
-                      disabled={busy !== null}
+                      onClick={() => {
+                        // Mid-run this stops the loop after the current batch;
+                        // before it starts it just closes the confirmation.
+                        if (busy === c.id) cancelRef.current = true;
+                        else setConfirming(null);
+                      }}
                       className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-ink-muted hover:text-ink"
                     >
                       <X size={13} />
-                      Cancel
+                      {busy === c.id ? "Stop" : "Cancel"}
                     </button>
                   </div>
                 </div>
