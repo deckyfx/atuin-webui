@@ -3,6 +3,7 @@ import { create } from "zustand";
 /** Top-level sections. The hash owns client navigation; the path stays server-side. */
 const SECTIONS = [
   "overview",
+  "analysis",
   "history",
   "prune",
   "audit",

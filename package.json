@@ -18,22 +18,22 @@
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.9",
-    "drizzle-orm": "^0.45.2",
-    "elysia": "^1.4.28",
-    "lucide-react": "^1.38.0",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
+    "drizzle-orm": "^0.45.3",
+    "elysia": "^1.4.30",
+    "lucide-react": "^1.51.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@types/bun": "latest",
-    "@types/react": "^19.2.15",
-    "@types/react-dom": "^19.2.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "bun-plugin-tailwind": "^0.1.2",
-    "drizzle-kit": "^0.31.10",
-    "tailwindcss": "^4.3.0",
-    "typescript": "^7"
+    "drizzle-kit": "^0.31.11",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2"
   }
 }

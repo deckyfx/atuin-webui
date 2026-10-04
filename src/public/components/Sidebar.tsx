@@ -8,6 +8,7 @@ import {
   KeyRound,
   Activity,
   Keyboard,
+  ChartPie,
   Stethoscope,
 } from "lucide-react";
 import { useRouteStore } from "../stores/route-store";
@@ -24,6 +25,7 @@ interface NavItem {
 /** Client-side sections, grouped by what they read. */
 const CLIENT_NAV: NavItem[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "analysis", label: "Analysis", icon: ChartPie },
   { id: "history", label: "History", icon: Terminal, rest: ["list"] },
   { id: "prune", label: "Batch Prune", icon: Scissors },
   { id: "audit", label: "Audit Log", icon: ScrollText },

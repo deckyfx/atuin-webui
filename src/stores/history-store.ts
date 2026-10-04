@@ -3,6 +3,8 @@ import { getHistoryDb, readClientMeta } from "../db/history";
 import { clientHistory } from "../db/history-schema";
 import type { ClientHistoryRow } from "../db/history-schema";
 import { envConfig } from "../env-config";
+import { CATEGORIES } from "../lib/categories";
+import { clusterNearDuplicates } from "../lib/similarity";
 
 export interface HistoryQuery {
   search?: string;
@@ -217,6 +219,142 @@ export class HistoryStore {
       fingerprint,
       sample: grouped,
     };
+  }
+
+  /**
+   * Counts each purge category, plus what is left over.
+   *
+   * One pass with conditional sums rather than a query per category: the
+   * categories overlap (an agent command is often also a `cd`), and counting
+   * them independently would produce figures that sum to more than the
+   * history. Each row is assigned to the first category it matches, in the
+   * order they are declared, so the numbers add up.
+   */
+  static async categorise(): Promise<{
+    total: number;
+    categories: Array<{ id: string; count: number }>;
+    remaining: number;
+  }> {
+    const db = getHistoryDb();
+
+    // CASE assigns each row exactly once, in declaration order.
+    const branches = CATEGORIES.map(
+      (c, i) => sql.raw(`when ${c.predicate} then ${i}`)
+    );
+    const bucket = sql.join(
+      [sql.raw("case"), ...branches, sql.raw(`else ${CATEGORIES.length} end`)],
+      sql.raw(" ")
+    );
+
+    const rows = await db
+      .select({ bucket: sql<number>`${bucket}`, count: count() })
+      .from(clientHistory)
+      .where(this.liveOnly())
+      .groupBy(sql`1`);
+
+    const byBucket = new Map(rows.map((r) => [Number(r.bucket), r.count]));
+    const categories = CATEGORIES.map((c, i) => ({
+      id: c.id,
+      count: byBucket.get(i) ?? 0,
+    }));
+
+    return {
+      total: rows.reduce((n, r) => n + r.count, 0),
+      categories,
+      remaining: byBucket.get(CATEGORIES.length) ?? 0,
+    };
+  }
+
+  /**
+   * Distinct commands in a category, for the exact-delete path.
+   *
+   * Capped: a category can hold thousands of unique commands, and the caller
+   * deletes them one at a time. The cap is returned alongside so the UI can
+   * say "this is a first batch" rather than implying the category is done.
+   */
+  static async commandsIn(
+    categoryId: string,
+    limit = 500
+  ): Promise<{ commands: string[]; distinct: number }> {
+    const category = CATEGORIES.find((c) => c.id === categoryId);
+    if (!category) throw new Error(`Unknown category: ${categoryId}`);
+
+    const db = getHistoryDb();
+    const [totals] = await db
+      .select({ distinct: sql<number>`count(distinct ${clientHistory.command})` })
+      .from(clientHistory)
+      .where(and(this.liveOnly(), sql.raw(category.predicate)));
+
+    const rows = await db
+      .selectDistinct({ command: clientHistory.command })
+      .from(clientHistory)
+      .where(and(this.liveOnly(), sql.raw(category.predicate)))
+      .limit(limit);
+
+    return { commands: rows.map((r) => r.command), distinct: totals?.distinct ?? 0 };
+  }
+
+  /** A few examples of what a category holds, so a purge can be inspected. */
+  static async sampleOf(categoryId: string, limit = 8): Promise<string[]> {
+    const category = CATEGORIES.find((c) => c.id === categoryId);
+    if (!category) throw new Error(`Unknown category: ${categoryId}`);
+
+    const rows = await getHistoryDb()
+      .selectDistinct({ command: clientHistory.command })
+      .from(clientHistory)
+      .where(and(this.liveOnly(), sql.raw(category.predicate)))
+      .limit(limit);
+    return rows.map((r) => r.command);
+  }
+
+  /**
+   * Near-duplicate clusters at a similarity threshold.
+   *
+   * Distinct commands only: exact repeats are already handled by dedup, and
+   * feeding them in would just produce clusters of identical text.
+   */
+  static async nearDuplicates(
+    threshold: number,
+    sampleSize = 10
+  ): Promise<{
+    threshold: number;
+    clusters: number;
+    removable: number;
+    sample: Array<{ keep: string; remove: string[]; worst: number }>;
+  }> {
+    const rows = await getHistoryDb()
+      .selectDistinct({ command: clientHistory.command })
+      .from(clientHistory)
+      .where(this.liveOnly());
+
+    const clusters = clusterNearDuplicates(
+      rows.map((r) => r.command),
+      threshold
+    );
+
+    return {
+      threshold,
+      clusters: clusters.length,
+      removable: clusters.reduce((n, c) => n + c.remove.length, 0),
+      // Loosest matches first: those are the ones worth eyeballing before
+      // accepting a threshold, because they are what it only just admitted.
+      sample: [...clusters]
+        .sort((a, b) => a.worst - b.worst)
+        .slice(0, sampleSize)
+        .map((c) => ({ keep: c.keep, remove: c.remove.slice(0, 3), worst: c.worst })),
+    };
+  }
+
+  /** Every command a near-duplicate purge would remove, keeping one per cluster. */
+  static async nearDuplicateRemovals(threshold: number, limit = 500): Promise<string[]> {
+    const rows = await getHistoryDb()
+      .selectDistinct({ command: clientHistory.command })
+      .from(clientHistory)
+      .where(this.liveOnly());
+
+    return clusterNearDuplicates(rows.map((r) => r.command), threshold)
+      .flatMap((c) => c.remove)
+      .slice(0, limit);
   }
 
   /** Daily command counts for the trailing `days` window. */

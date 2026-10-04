@@ -4,6 +4,7 @@ import { Sidebar } from "./components/Sidebar";
 import { TopRibbon, ToastStack } from "./components/TopRibbon";
 import { SetupGate } from "./components/SetupGate";
 import { DashboardPage } from "./pages/DashboardPage";
+import { AnalysisPage } from "./pages/AnalysisPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { PrunePage } from "./pages/PrunePage";
 import { AuditPage } from "./pages/AuditPage";
@@ -29,6 +30,7 @@ function App() {
   // page here is a compile error rather than a blank screen at runtime.
   const pages: Record<Section, React.ReactNode> = {
     overview: <DashboardPage />,
+    analysis: <AnalysisPage />,
     history: <HistoryPage />,
     prune: <PrunePage />,
     audit: <AuditPage />,

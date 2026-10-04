@@ -4,6 +4,7 @@ import { UserStore } from "../stores/user-store";
 import { SessionStore } from "../stores/session-store";
 import { StatsStore } from "../stores/stats-store";
 import { HistoryStore } from "../stores/history-store";
+import { CATEGORIES } from "../lib/categories";
 import { AtuinCli } from "../services/atuin-cli";
 import type { SearchRule } from "../services/atuin-cli";
 import { readClientMeta, historyAvailable, HistoryUnavailableError } from "../db/history";
@@ -335,6 +336,85 @@ export const apiPlugin = new Elysia({ prefix: "/api" })
         commands: t.Array(t.String({ minLength: 1 }), { minItems: 1, maxItems: 500 }),
       }),
     }
+  )
+  .get("/history/analysis", async () => {
+    const counts = await HistoryStore.categorise();
+    const byId = new Map(counts.categories.map((c) => [c.id, c.count]));
+    return {
+      total: counts.total,
+      remaining: counts.remaining,
+      categories: CATEGORIES.map((c) => ({
+        id: c.id,
+        label: c.label,
+        description: c.description,
+        cost: c.cost,
+        count: byId.get(c.id) ?? 0,
+        // The UI needs to know whether a purge is even possible, and why not.
+        purgeable: c.purge.kind !== "none",
+        why: c.purge.kind === "none" ? c.purge.because : undefined,
+        mechanism: c.purge.kind,
+      })),
+    };
+  })
+  .get(
+    "/history/analysis/:id/sample",
+    async ({ params, set }) => {
+      try {
+        return { sample: await HistoryStore.sampleOf(params.id, 8) };
+      } catch (err) {
+        set.status = 404;
+        return { message: err instanceof Error ? err.message : "Unknown category." };
+      }
+    },
+    { params: t.Object({ id: t.String({ minLength: 1 }) }) }
+  )
+  .get(
+    "/history/analysis/:id/commands",
+    async ({ params, query, set }) => {
+      try {
+        return await HistoryStore.commandsIn(params.id, query.limit ?? 500);
+      } catch (err) {
+        set.status = 404;
+        return { message: err instanceof Error ? err.message : "Unknown category." };
+      }
+    },
+    {
+      params: t.Object({ id: t.String({ minLength: 1 }) }),
+      query: t.Object({ limit: t.Optional(t.Numeric({ minimum: 1, maximum: 500 })) }),
+    }
+  )
+  .get(
+    "/history/analysis/:id/plan",
+    async ({ params, set }) => {
+      // The server owns what a category means. The client names one and gets
+      // back the exact arguments to hand to the existing purge endpoints, so
+      // the definition cannot drift between the count and the deletion.
+      const category = CATEGORIES.find((c) => c.id === params.id);
+      if (!category) {
+        set.status = 404;
+        return { message: `Unknown category: ${params.id}` };
+      }
+      return { id: category.id, purge: category.purge };
+    },
+    { params: t.Object({ id: t.String({ minLength: 1 }) }) }
+  )
+  .get(
+    "/history/near-duplicates",
+    async ({ query }) => await HistoryStore.nearDuplicates(query.threshold ?? 0.9),
+    {
+      query: t.Object({
+        // 0.5 floor: below that the clusters stop being duplicates and start
+        // being "commands that share a verb".
+        threshold: t.Optional(t.Numeric({ minimum: 0.5, maximum: 1 })),
+      }),
+    }
+  )
+  .get(
+    "/history/near-duplicates/commands",
+    async ({ query }) => ({
+      commands: await HistoryStore.nearDuplicateRemovals(query.threshold ?? 0.9, 200),
+    }),
+    { query: t.Object({ threshold: t.Optional(t.Numeric({ minimum: 0.5, maximum: 1 })) }) }
   )
   .get("/history/hosts", async () => await HistoryStore.byHost())
   .get("/history/verbs", async () => await HistoryStore.topVerbs(20))
