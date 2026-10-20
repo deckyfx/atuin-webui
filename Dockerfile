@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1
 
 # ─── Build the dashboard ─────────────────────────────────────────────────────
-FROM oven/bun:1.4-debian AS builder
+# Pinned, not the floating 1.4 tag: the build runs `bun check`, which does not
+# exist before 1.4.3, so a tag that resolves to an older patch would fail the
+# typecheck step with an unrecognised command rather than a type error.
+FROM oven/bun:1.4.3-debian AS builder
 WORKDIR /build
 
 # Dependencies first, so source edits do not invalidate the install layer.
